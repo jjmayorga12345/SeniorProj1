@@ -18,6 +18,8 @@ function formatUserResponse(user) {
     firstName: user.firstName,
     lastName: user.lastName,
     role: user.role,
+    profilePicture: user.profilePicture || null,
+    showContactInfo: user.showContactInfo === 1 || user.showContactInfo === true,
   };
 }
 
@@ -456,11 +458,26 @@ router.get("/auth/profile", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get user info
-    const user = await User.findByPk(userId);
-    if (!user) {
+    // Get user info with profile_picture and show_contact_info
+    const [userRows] = await pool.execute(
+      "SELECT id, email, first_name, last_name, role, profile_picture, show_contact_info FROM users WHERE id = ?",
+      [userId]
+    );
+    
+    if (!userRows || userRows.length === 0) {
       return res.status(404).json({ message: "User not found" });
     }
+
+    const userRow = userRows[0];
+    const user = {
+      id: userRow.id.toString(),
+      email: userRow.email,
+      firstName: userRow.first_name,
+      lastName: userRow.last_name,
+      role: userRow.role,
+      profilePicture: userRow.profile_picture || null,
+      showContactInfo: userRow.show_contact_info === 1 || userRow.show_contact_info === true,
+    };
 
     // Get stats
     const [eventsHosted] = await pool.execute(
@@ -477,7 +494,7 @@ router.get("/auth/profile", authenticateToken, async (req, res) => {
     );
 
     return res.status(200).json({
-      user: formatUserResponse(user),
+      user: user,
       stats: {
         eventsHosted: parseInt(eventsHosted[0]?.count || 0, 10),
         eventsAttending: parseInt(eventsAttending[0]?.count || 0, 10),
@@ -487,6 +504,32 @@ router.get("/auth/profile", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Failed to fetch profile:", error);
     return res.status(500).json({ message: "Failed to fetch profile" });
+  }
+});
+
+// PUT /api/auth/profile - Update profile settings (show_contact_info toggle)
+router.put("/auth/profile", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { showContactInfo } = req.body;
+
+    if (showContactInfo === undefined) {
+      return res.status(400).json({ message: "showContactInfo is required" });
+    }
+
+    // Update show_contact_info
+    await pool.execute(
+      "UPDATE users SET show_contact_info = ? WHERE id = ?",
+      [showContactInfo ? 1 : 0, userId]
+    );
+
+    return res.status(200).json({ 
+      message: "Profile updated successfully",
+      showContactInfo: showContactInfo ? true : false,
+    });
+  } catch (error) {
+    console.error("Failed to update profile:", error);
+    return res.status(500).json({ message: "Failed to update profile" });
   }
 });
 

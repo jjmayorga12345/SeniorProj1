@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import AppShell from "../components/layout/AppShell";
-import { getCurrentUser, getUserRole } from "../utils/auth";
+import AppShell from "../../components/layout/AppShell";
+import { getCurrentUser, getUserRole } from "../../utils/auth";
 import {
   getProfile,
   requestChangePasswordCode,
@@ -9,7 +9,9 @@ import {
   requestDeleteAccountCode,
   deleteAccount,
   logout,
-} from "../api";
+  uploadProfilePicture,
+  updateProfileSettings,
+} from "../../api";
 
 function MyAccountPage() {
   const navigate = useNavigate();
@@ -37,6 +39,10 @@ function MyAccountPage() {
   const [deleteAccountCode, setDeleteAccountCode] = useState("");
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState("");
+  
+  // Profile picture and contact info state
+  const [uploadingPicture, setUploadingPicture] = useState(false);
+  const [updatingSettings, setUpdatingSettings] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -165,6 +171,49 @@ function MyAccountPage() {
   }
 
   const initials = `${user?.firstName?.[0] || ""}${user?.lastName?.[0] || ""}`.toUpperCase();
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const profilePictureUrl = profile?.user?.profilePicture 
+    ? (profile.user.profilePicture.startsWith("http") 
+        ? profile.user.profilePicture 
+        : `${API_URL}${profile.user.profilePicture}`)
+    : null;
+
+  const handleProfilePictureUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      setUploadingPicture(true);
+      const result = await uploadProfilePicture(file);
+      // Reload profile to get updated picture
+      const updatedProfile = await getProfile();
+      setProfile(updatedProfile);
+      alert("Profile picture updated successfully!");
+    } catch (err) {
+      console.error("Failed to upload profile picture:", err);
+      alert(err.message || "Failed to upload profile picture");
+    } finally {
+      setUploadingPicture(false);
+    }
+  };
+
+  const handleToggleContactInfo = async (e) => {
+    const newValue = e.target.checked;
+    try {
+      setUpdatingSettings(true);
+      await updateProfileSettings({ showContactInfo: newValue });
+      // Reload profile to get updated setting
+      const updatedProfile = await getProfile();
+      setProfile(updatedProfile);
+    } catch (err) {
+      console.error("Failed to update settings:", err);
+      alert(err.message || "Failed to update settings");
+      // Revert checkbox
+      e.target.checked = !newValue;
+    } finally {
+      setUpdatingSettings(false);
+    }
+  };
 
   return (
     <AppShell>
@@ -175,25 +224,45 @@ function MyAccountPage() {
             <div className="flex items-center gap-6">
               {/* Avatar */}
               <div className="relative">
-                <div className="w-24 h-24 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white text-2xl font-bold">
-                  {initials}
-                </div>
-                <button className="absolute bottom-0 right-0 w-8 h-8 bg-white border-2 border-[#e2e8f0] rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-[#45556c]"
-                  >
-                    <path d="M12 2v20M2 12h20" />
-                  </svg>
-                </button>
+                {profilePictureUrl ? (
+                  <img
+                    src={profilePictureUrl}
+                    alt={`${user?.firstName} ${user?.lastName}`}
+                    className="w-24 h-24 rounded-full object-cover border-2 border-[#e2e8f0]"
+                  />
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white text-2xl font-bold">
+                    {initials}
+                  </div>
+                )}
+                <label className="absolute bottom-0 right-0 w-8 h-8 bg-white border-2 border-[#e2e6b4e] rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleProfilePictureUpload}
+                    disabled={uploadingPicture}
+                    className="hidden"
+                  />
+                  {uploadingPicture ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#2e6b4e]"></div>
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="text-[#45556c]"
+                    >
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  )}
+                </label>
               </div>
 
               {/* User Info */}
@@ -277,22 +346,51 @@ function MyAccountPage() {
 
           {/* Tab Content */}
           {activeTab === "profile" && (
-            <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-[#0f172b] mb-4">Profile Information</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-[#314158]">Name</label>
-                  <p className="text-[#45556c] mt-1">
-                    {user?.firstName} {user?.lastName}
-                  </p>
+            <div className="space-y-6">
+              <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6">
+                <h3 className="text-lg font-semibold text-[#0f172b] mb-4">Profile Information</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-[#314158]">Name</label>
+                    <p className="text-[#45556c] mt-1">
+                      {user?.firstName} {user?.lastName}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-[#314158]">Email</label>
+                    <p className="text-[#45556c] mt-1">{user?.email}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-[#314158]">Role</label>
+                    <p className="text-[#45556c] mt-1 capitalize">{user?.role}</p>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm font-medium text-[#314158]">Email</label>
-                  <p className="text-[#45556c] mt-1">{user?.email}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-[#314158]">Role</label>
-                  <p className="text-[#45556c] mt-1 capitalize">{user?.role}</p>
+              </div>
+
+              {/* Privacy Settings */}
+              <div className="bg-white border border-[#e2e8f0] rounded-2xl shadow-sm p-6">
+                <h3 className="text-lg font-semibold text-[#0f172b] mb-4">Privacy Settings</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <label className="text-sm font-medium text-[#314158] block mb-1">
+                        Show Contact Information on Event Listings
+                      </label>
+                      <p className="text-sm text-[#45556c]">
+                        When enabled, your email will be visible to attendees on your event details pages.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer ml-4">
+                      <input
+                        type="checkbox"
+                        checked={profile?.user?.showContactInfo || false}
+                        onChange={handleToggleContactInfo}
+                        disabled={updatingSettings}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#2e6b4e]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2e6b4e]"></div>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>

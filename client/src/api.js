@@ -697,5 +697,185 @@ export async function adminDeleteEvent(eventId) {
   }
 }
 
+// Admin Users API functions
+export async function getAllUsers() {
+  try {
+    const response = await fetch(`${baseUrl}/admin/users`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function getUserDetails(userId) {
+  try {
+    const response = await fetch(`${baseUrl}/admin/users/${userId}`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function deleteUser(userId) {
+  try {
+    const response = await fetch(`${baseUrl}/admin/users/${userId}`, {
+      ...getFetchOptions(),
+      method: "DELETE",
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function unattendUserFromEvent(userId, eventId) {
+  try {
+    const response = await fetch(`${baseUrl}/admin/users/${userId}/unattend/${eventId}`, {
+      ...getFetchOptions(),
+      method: "DELETE",
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function getAnalytics() {
+  try {
+    const response = await fetch(`${baseUrl}/admin/analytics`, {
+      ...getFetchOptions(),
+      method: "GET",
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Hero Background Settings API functions
+export async function getHeroSettings() {
+  try {
+    // Public endpoint - no auth required
+    const response = await fetch(`${baseUrl}/admin/settings/hero`, {
+      method: "GET",
+      credentials: "include",
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function updateHeroSettings({ type, color, image }) {
+  try {
+    const response = await fetch(`${baseUrl}/admin/settings/hero`, {
+      ...getFetchOptions(),
+      method: "PUT",
+      body: JSON.stringify({ type, color, image }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function uploadHeroImage(imageFile) {
+  try {
+    const formData = new FormData();
+    formData.append("image", imageFile);
+
+    const token = getAuthToken();
+    const headers = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${baseUrl}/upload/hero-image`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: formData,
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+// Profile API functions
+export async function updateProfileSettings({ showContactInfo }) {
+  try {
+    const response = await fetch(`${baseUrl}/auth/profile`, {
+      ...getFetchOptions(),
+      method: "PUT",
+      body: JSON.stringify({ showContactInfo }),
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
+export async function uploadProfilePicture(imageFile) {
+  try {
+    const formData = new FormData();
+    formData.append("image", imageFile);
+
+    const token = getAuthToken();
+    const headers = {};
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${baseUrl}/upload/profile-picture`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: formData,
+    });
+
+    return await handleResponse(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Unable to connect to server. Please check if the server is running.");
+    }
+    throw error;
+  }
+}
+
 // Export getFetchOptions for use in other API calls
 export { getFetchOptions };

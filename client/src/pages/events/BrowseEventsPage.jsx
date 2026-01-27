@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { getEvents, checkFavorite, addFavorite, removeFavorite, checkRSVPStatus } from "../api";
-import EventCard from "../components/events/EventCard";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
+import { getEvents, checkFavorite, addFavorite, removeFavorite, checkRSVPStatus } from "../../api";
+import EventCard from "../../components/events/EventCard";
 
 // Preset categories (same as CreateEventPage)
 const CATEGORIES = [
@@ -66,6 +66,7 @@ function getImageUrl(imagePath) {
 
 function BrowseEventsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [zipCode, setZipCode] = useState("");
   const [radius, setRadius] = useState(10); // Default 10 miles
@@ -76,6 +77,20 @@ function BrowseEventsPage() {
   const [error, setError] = useState("");
   const [favoritesMap, setFavoritesMap] = useState({}); // { eventId: true/false }
   const [rsvpMap, setRsvpMap] = useState({}); // { eventId: true/false }
+
+  // Check if user is authenticated
+  const isAuthenticated = () => {
+    return !!localStorage.getItem("eventure_token");
+  };
+
+  // Handle event card click - redirect to login if not authenticated
+  const handleEventClick = (e, eventId) => {
+    if (!isAuthenticated()) {
+      e.preventDefault();
+      navigate("/login", { state: { returnTo: `/events/${eventId}` } });
+    }
+    // If authenticated, let the Link handle navigation normally
+  };
 
   // Handle ZIP input - strip non-digits and cap at 5
   const handleZipChange = (e) => {
@@ -429,52 +444,97 @@ function BrowseEventsPage() {
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {events.map((event) => (
-              <Link
+              <div
                 key={event.id}
-                to={`/events/${event.id}`}
-                className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl"
+                onClick={(e) => handleEventClick(e, event.id)}
+                className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl cursor-pointer"
               >
-                <EventCard
-                  eventId={parseInt(event.id, 10)}
-                  title={event.title}
-                  date={formatEventDate(event.starts_at)}
-                  location={buildFullAddress(event)}
-                  category={event.category}
-                  price={null}
-                  imageUrl={getImageUrl(event.main_image)}
-                  isFavorited={favoritesMap[parseInt(event.id, 10)] || false}
-                  isRsvped={rsvpMap[parseInt(event.id, 10)] || false}
-                  onFavoriteClick={handleFavoriteClick}
-                  capacity={event.capacity !== null && event.capacity !== undefined ? event.capacity : null}
-                  rsvpCount={event.rsvp_count !== null && event.rsvp_count !== undefined ? event.rsvp_count : 0}
-                />
-              </Link>
+                {isAuthenticated() ? (
+                  <Link
+                    to={`/events/${event.id}`}
+                    className="block"
+                  >
+                    <EventCard
+                      eventId={parseInt(event.id, 10)}
+                      title={event.title}
+                      date={formatEventDate(event.starts_at)}
+                      location={buildFullAddress(event)}
+                      category={event.category}
+                      price={null}
+                      imageUrl={getImageUrl(event.main_image)}
+                      isFavorited={favoritesMap[parseInt(event.id, 10)] || false}
+                      isRsvped={rsvpMap[parseInt(event.id, 10)] || false}
+                      onFavoriteClick={handleFavoriteClick}
+                      capacity={event.capacity !== null && event.capacity !== undefined ? event.capacity : null}
+                      rsvpCount={event.rsvp_count !== null && event.rsvp_count !== undefined ? event.rsvp_count : 0}
+                    />
+                  </Link>
+                ) : (
+                  <EventCard
+                    eventId={parseInt(event.id, 10)}
+                    title={event.title}
+                    date={formatEventDate(event.starts_at)}
+                    location={buildFullAddress(event)}
+                    category={event.category}
+                    price={null}
+                    imageUrl={getImageUrl(event.main_image)}
+                    isFavorited={false}
+                    isRsvped={false}
+                    onFavoriteClick={handleFavoriteClick}
+                    capacity={event.capacity !== null && event.capacity !== undefined ? event.capacity : null}
+                    rsvpCount={event.rsvp_count !== null && event.rsvp_count !== undefined ? event.rsvp_count : 0}
+                  />
+                )}
+              </div>
             ))}
           </div>
         ) : (
           <div className="space-y-4">
             {events.map((event) => (
-              <Link
+              <div
                 key={event.id}
-                to={`/events/${event.id}`}
-                className="block focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl"
+                onClick={(e) => handleEventClick(e, event.id)}
+                className="block focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl cursor-pointer"
               >
-                <EventCard
-                  eventId={parseInt(event.id, 10)}
-                  title={event.title}
-                  date={formatEventDate(event.starts_at)}
-                  location={buildFullAddress(event)}
-                  category={event.category}
-                  price={null}
-                  imageUrl={getImageUrl(event.main_image)}
-                  viewMode="list"
-                  isFavorited={favoritesMap[parseInt(event.id, 10)] || false}
-                  isRsvped={rsvpMap[parseInt(event.id, 10)] || false}
-                  onFavoriteClick={handleFavoriteClick}
-                  capacity={event.capacity !== null && event.capacity !== undefined ? event.capacity : null}
-                  rsvpCount={event.rsvp_count !== null && event.rsvp_count !== undefined ? event.rsvp_count : 0}
-                />
-              </Link>
+                {isAuthenticated() ? (
+                  <Link
+                    to={`/events/${event.id}`}
+                    className="block"
+                  >
+                    <EventCard
+                      eventId={parseInt(event.id, 10)}
+                      title={event.title}
+                      date={formatEventDate(event.starts_at)}
+                      location={buildFullAddress(event)}
+                      category={event.category}
+                      price={null}
+                      imageUrl={getImageUrl(event.main_image)}
+                      viewMode="list"
+                      isFavorited={favoritesMap[parseInt(event.id, 10)] || false}
+                      isRsvped={rsvpMap[parseInt(event.id, 10)] || false}
+                      onFavoriteClick={handleFavoriteClick}
+                      capacity={event.capacity !== null && event.capacity !== undefined ? event.capacity : null}
+                      rsvpCount={event.rsvp_count !== null && event.rsvp_count !== undefined ? event.rsvp_count : 0}
+                    />
+                  </Link>
+                ) : (
+                  <EventCard
+                    eventId={parseInt(event.id, 10)}
+                    title={event.title}
+                    date={formatEventDate(event.starts_at)}
+                    location={buildFullAddress(event)}
+                    category={event.category}
+                    price={null}
+                    imageUrl={getImageUrl(event.main_image)}
+                    viewMode="list"
+                    isFavorited={false}
+                    isRsvped={false}
+                    onFavoriteClick={handleFavoriteClick}
+                    capacity={event.capacity !== null && event.capacity !== undefined ? event.capacity : null}
+                    rsvpCount={event.rsvp_count !== null && event.rsvp_count !== undefined ? event.rsvp_count : 0}
+                  />
+                )}
+              </div>
             ))}
           </div>
         )}

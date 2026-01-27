@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { login } from "../api";
+import { login } from "../../api";
 
 function LoginPage() {
   const [email, setEmail] = useState("");
@@ -11,14 +11,15 @@ function LoginPage() {
   const location = useLocation();
   const registered = location.state?.registered === true;
   const resetSuccess = location.state?.resetSuccess === true;
+  const returnTo = location.state?.returnTo || "/dashboard";
 
   // Redirect if already logged in
   useEffect(() => {
     const token = localStorage.getItem("eventure_token");
     if (token) {
-      navigate("/", { replace: true });
+      navigate(returnTo, { replace: true });
     }
-  }, [navigate]);
+  }, [navigate, returnTo]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,8 +37,8 @@ function LoginPage() {
         localStorage.setItem("eventure_user", JSON.stringify(data.user));
       }
       
-      // Navigate to dashboard
-      navigate("/dashboard", { replace: true });
+      // Navigate to returnTo path or dashboard
+      navigate(returnTo, { replace: true });
     } catch (err) {
       // Show user-friendly error message
       const errorMessage = err.message || "Login failed. Please check your credentials and try again.";

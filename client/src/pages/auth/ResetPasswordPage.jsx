@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { verifyResetCode, resetPassword } from "../api";
+import { verifyResetCode, resetPassword } from "../../api";
 
 function EyeIcon({ show, onClick }) {
   return (

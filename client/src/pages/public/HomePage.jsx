@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getEvents } from "../api";
-import EventCard from "../components/events/EventCard";
+import { getHeroSettings, updateHeroSettings, uploadHeroImage, getEvents } from "../../api";
+import { getUserRole } from "../../utils/auth";
+import EventCard from "../../components/events/EventCard";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -45,6 +46,7 @@ const CATEGORY_ICONS = {
   Other: "📅",
 };
 
+
 // Format date from database (starts_at) to readable format
 function formatEventDate(dateString) {
   if (!dateString) return "";
@@ -82,35 +84,40 @@ function HomePage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState("");
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [mostAttendedEvent, setMostAttendedEvent] = useState(null);
+  const [loadingEvent, setLoadingEvent] = useState(true);
 
+
+
+  // Fetch the most attended event
   useEffect(() => {
-    const fetchEvents = async () => {
+    const fetchMostAttendedEvent = async () => {
       try {
-        setLoading(true);
-        setError("");
+        setLoadingEvent(true);
+        // Fetch all approved public events with their RSVP counts
+        // The API already filters for approved and public events by default
+        const events = await getEvents();
         
-        // Fetch recently added events - same logic as browse, just limit to 3 and order by created_at DESC
-        const eventsData = await getEvents({ 
-          limit: 3, 
-          orderBy: "created_at", 
-          order: "DESC" 
-        });
-        
-        setEvents(eventsData || []);
+        if (events && events.length > 0) {
+          // Find the event with the highest rsvp_count
+          const mostAttended = events.reduce((max, event) => {
+            const currentCount = event.rsvp_count || 0;
+            const maxCount = max.rsvp_count || 0;
+            return currentCount > maxCount ? event : max;
+          }, events[0]);
+          
+          setMostAttendedEvent(mostAttended);
+        }
       } catch (err) {
-        console.error("Failed to fetch events:", err);
-        setError(err.message || "Failed to load events");
-        setEvents([]);
+        console.error("Failed to fetch most attended event:", err);
       } finally {
-        setLoading(false);
+        setLoadingEvent(false);
       }
     };
 
-    fetchEvents();
+    fetchMostAttendedEvent();
   }, []);
+
 
   const handleCategoryClick = (category) => {
     navigate(`/browse?category=${encodeURIComponent(category)}`);
@@ -119,7 +126,16 @@ function HomePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-r from-[#2e6b4e] to-[#255a43] text-white">
+      <section 
+        className="relative text-white overflow-hidden"
+        style={{
+          backgroundImage: "url(/hero-background.png)",
+          backgroundSize: "cover",
+          backgroundPosition: "center center",
+          backgroundRepeat: "no-repeat",
+          minHeight: "400px",
+        }}
+      >
         <div className="absolute inset-0 bg-black/20"></div>
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32">
           <div className="text-center">
@@ -178,42 +194,59 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Recently Added Events */}
+      {/* Our Story Section with Most Attended Event */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <h2 className="text-2xl font-bold text-[#0f172b] mb-6">Recently Added Events</h2>
-        {loading ? (
-          <div className="text-center py-12">
-            <p className="text-[#45556c]">Loading events...</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Story Section */}
+          <div className="bg-white rounded-2xl shadow-lg p-8 md:p-12">
+            <h2 className="text-3xl font-bold text-[#0f172b] mb-4">How Eventure Was Started</h2>
+            <div className="prose prose-lg max-w-none text-[#45556c]">
+              <p className="text-lg leading-relaxed mb-4">
+                Eventure began as a simple idea in a college dorm room. Three friends, frustrated by the difficulty of discovering local events and connecting with their community, decided to build something better.
+              </p>
+              <p className="text-lg leading-relaxed mb-4">
+                What started as a weekend project quickly grew into a passion. We realized that finding events shouldn't be complicated—whether you're looking for a music festival, a tech meetup, a food tasting, or a networking event, everything should be in one place, easy to browse, and simple to join.
+              </p>
+              <p className="text-lg leading-relaxed mb-4">
+                Today, Eventure has become a thriving platform where thousands of people discover amazing events every day. We've built a community that brings people together, helps organizers reach their audiences, and makes every day an opportunity to experience something new.
+              </p>
+              <p className="text-lg leading-relaxed">
+                Our mission is simple: <strong className="text-[#2e6b4e]">to make event discovery effortless and community connection meaningful.</strong> Join us on this journey, and let's discover amazing events together.
+              </p>
+            </div>
           </div>
-        ) : error ? (
-          <div className="text-center py-12">
-            <p className="text-red-600">{error}</p>
-          </div>
-        ) : events.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-[#45556c]">No events available yet</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {events.map((event) => (
+
+          {/* Most Attended Event Card */}
+          <div className="bg-white rounded-2xl shadow-lg p-8 md:p-12">
+            <h2 className="text-3xl font-bold text-[#0f172b] mb-6">Current Most Attended Event</h2>
+            {loadingEvent ? (
+              <div className="text-center py-12">
+                <p className="text-[#45556c]">Loading event...</p>
+              </div>
+            ) : mostAttendedEvent ? (
               <Link
-                key={event.id}
-                to={`/events/${event.id}`}
-                className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl"
+                to={`/events/${mostAttendedEvent.id}`}
+                className="focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:rounded-2xl block"
               >
                 <EventCard
-                  title={event.title}
-                  date={formatEventDate(event.starts_at)}
-                  location={buildFullAddress(event)}
-                  category={event.category}
-                  imageUrl={getImageUrl(event.main_image)}
-                  capacity={event.capacity}
-                  rsvpCount={event.rsvp_count || 0}
+                  title={mostAttendedEvent.title}
+                  date={formatEventDate(mostAttendedEvent.starts_at)}
+                  location={buildFullAddress(mostAttendedEvent)}
+                  category={mostAttendedEvent.category}
+                  imageUrl={getImageUrl(mostAttendedEvent.main_image)}
+                  capacity={mostAttendedEvent.capacity}
+                  rsvpCount={mostAttendedEvent.rsvp_count || 0}
+                  price={mostAttendedEvent.ticket_price || 0}
+                  eventId={mostAttendedEvent.id}
                 />
               </Link>
-            ))}
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-[#45556c]">No events available yet</p>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </section>
 
       {/* Browse by Category */}
@@ -338,6 +371,7 @@ function HomePage() {
           </div>
         </div>
       </footer>
+
     </div>
   );
 }

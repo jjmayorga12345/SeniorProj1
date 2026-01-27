@@ -1,16 +1,23 @@
-# React + Vite
+# 📱 Client - Frontend Application
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the React frontend for Eventure, built with Vite.
 
-Currently, two official plugins are available:
+## 📁 Folder Structure
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **`src/pages/`** - All the different pages/screens of the app
+- **`src/components/`** - Reusable UI components
+- **`src/layouts/`** - Page layout templates
+- **`src/utils/`** - Helper functions
+- **`public/`** - Static files (images, logos)
+- **`src/api.js`** - All API calls to the backend
 
-## React Compiler
+## 🎨 Styling
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Uses Tailwind CSS for styling
+- Custom styles in `index.css`
 
-## Expanding the ESLint configuration
+## 🚀 Running
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm run dev
+```

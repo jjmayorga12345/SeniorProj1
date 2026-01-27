@@ -1,8 +1,8 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { getEventById, checkFavorite, addFavorite, removeFavorite, rsvpToEvent, cancelRSVP, checkRSVPStatus } from "../api";
-import EventMap from "../components/EventMap";
-import { getUserRole } from "../utils/auth";
+import { getEventById, checkFavorite, addFavorite, removeFavorite, rsvpToEvent, cancelRSVP, checkRSVPStatus } from "../../api";
+import EventMap from "../../components/EventMap";
+import { getUserRole } from "../../utils/auth";
 
 function formatEventDate(dateString) {
   if (!dateString) return "";
@@ -99,6 +99,13 @@ function EventDetailsPage() {
   }, [id]);
 
   const handleFavoriteClick = async () => {
+    // Check if user is authenticated
+    const token = localStorage.getItem("eventure_token");
+    if (!token) {
+      navigate("/login", { state: { returnTo: `/events/${id}` } });
+      return;
+    }
+
     try {
       const willBeFavorited = !isFavorited;
       if (willBeFavorited) {
@@ -109,7 +116,7 @@ function EventDetailsPage() {
       setIsFavorited(willBeFavorited);
     } catch (err) {
       console.error("Failed to update favorite:", err);
-      // Optionally show error message to user
+      alert(err.message || "Failed to update favorite. Please try again.");
     }
   };
 
@@ -415,16 +422,47 @@ function EventDetailsPage() {
         {/* Organizer Info Card */}
         <div className="bg-white border border-[#e2e8f0] rounded-[14px] shadow-sm p-6 mb-6">
           <h2 className="text-xl font-semibold text-[#0f172b] mb-4">Organizer</h2>
-          <div className="flex items-center gap-4">
-            <img 
-              src="/eventure-logo.png" 
-              alt="Eventure" 
-              className="h-12 w-auto shrink-0"
-            />
-            <div>
-              <p className="text-sm text-[#45556c]">Organizer details coming soon</p>
+          {event.organizer ? (
+            <div className="flex items-center gap-4">
+              {event.organizer.profilePicture ? (
+                <img 
+                  src={event.organizer.profilePicture.startsWith("http") 
+                    ? event.organizer.profilePicture 
+                    : `${import.meta.env.VITE_API_URL || "http://localhost:5000"}${event.organizer.profilePicture}`}
+                  alt={`${event.organizer.firstName} ${event.organizer.lastName}`}
+                  className="h-16 w-16 rounded-full object-cover border-2 border-[#e2e8f0] shrink-0"
+                />
+              ) : (
+                <div className="h-16 w-16 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white text-xl font-bold shrink-0">
+                  {event.organizer.firstName?.[0] || ""}{event.organizer.lastName?.[0] || ""}
+                </div>
+              )}
+              <div className="flex-1">
+                <p className="font-semibold text-[#0f172b]">
+                  {event.organizer.firstName} {event.organizer.lastName}
+                </p>
+                {event.organizer.showContactInfo && event.organizer.email && (
+                  <a 
+                    href={`mailto:${event.organizer.email}`}
+                    className="text-sm text-[#2e6b4e] hover:underline mt-1 block"
+                  >
+                    {event.organizer.email}
+                  </a>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-4">
+              <img 
+                src="/eventure-logo.png" 
+                alt="Eventure" 
+                className="h-12 w-auto shrink-0"
+              />
+              <div>
+                <p className="text-sm text-[#45556c]">Organizer details coming soon</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Map/Location Card */}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getMyEvents, getAttendingEvents, deleteEvent } from "../api";
-import AppShell from "../components/layout/AppShell";
+import { getMyEvents, getAttendingEvents, deleteEvent } from "../../api";
+import AppShell from "../../components/layout/AppShell";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 

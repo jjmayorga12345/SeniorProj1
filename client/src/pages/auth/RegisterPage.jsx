@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { register } from "../api";
+import { register } from "../../api";
 
 const ROLE_OPTIONS = [
   { value: "user", label: "Join as attendee" },

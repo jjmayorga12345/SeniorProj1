@@ -60,6 +60,8 @@ app.use(cookieParser());
 // Serve static files from uploads directory
 const path = require("path");
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+app.use("/uploads/hero", express.static(path.join(__dirname, "../uploads/hero")));
+app.use("/uploads/profiles", express.static(path.join(__dirname, "../uploads/profiles")));
 
 // Handle OPTIONS preflight requests - CORS middleware already handles this
 

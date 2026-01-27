@@ -649,15 +649,21 @@ router.get("/:id", async (req, res) => {
           e.created_at,
           e.lat,
           e.lng,
-          COUNT(DISTINCT r.id) as rsvp_count
+          COUNT(DISTINCT r.id) as rsvp_count,
+          u.first_name as organizer_first_name,
+          u.last_name as organizer_last_name,
+          u.profile_picture as organizer_profile_picture,
+          u.show_contact_info as organizer_show_contact_info,
+          CASE WHEN u.show_contact_info = 1 THEN u.email ELSE NULL END as organizer_email
         FROM events e
         LEFT JOIN rsvps r ON e.id = r.event_id AND r.status = 'going'
+        LEFT JOIN users u ON e.created_by = u.id
         WHERE e.id = ?
           AND (
             (e.status = ? AND e.is_public = ?)
             OR e.created_by = ?
           )
-        GROUP BY e.id
+        GROUP BY e.id, u.first_name, u.last_name, u.profile_picture, u.show_contact_info, u.email
         LIMIT 1
       `;
       params = [eventId, "approved", 1, userId];
@@ -691,13 +697,19 @@ router.get("/:id", async (req, res) => {
           e.created_at,
           e.lat,
           e.lng,
-          COUNT(DISTINCT r.id) as rsvp_count
+          COUNT(DISTINCT r.id) as rsvp_count,
+          u.first_name as organizer_first_name,
+          u.last_name as organizer_last_name,
+          u.profile_picture as organizer_profile_picture,
+          u.show_contact_info as organizer_show_contact_info,
+          CASE WHEN u.show_contact_info = 1 THEN u.email ELSE NULL END as organizer_email
         FROM events e
         LEFT JOIN rsvps r ON e.id = r.event_id AND r.status = 'going'
+        LEFT JOIN users u ON e.created_by = u.id
         WHERE e.id = ?
           AND e.status = ?
           AND e.is_public = ?
-        GROUP BY e.id
+        GROUP BY e.id, u.first_name, u.last_name, u.profile_picture, u.show_contact_info, u.email
         LIMIT 1
       `;
       params = [eventId, "approved", 1];
@@ -710,7 +722,26 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ message: "Event not found" });
     }
 
-    return res.status(200).json(event);
+    // Format organizer info
+    const organizer = {
+      firstName: event.organizer_first_name || null,
+      lastName: event.organizer_last_name || null,
+      profilePicture: event.organizer_profile_picture || null,
+      email: event.organizer_email || null,
+      showContactInfo: event.organizer_show_contact_info === 1 || event.organizer_show_contact_info === true,
+    };
+
+    // Remove organizer fields from event object
+    delete event.organizer_first_name;
+    delete event.organizer_last_name;
+    delete event.organizer_profile_picture;
+    delete event.organizer_show_contact_info;
+    delete event.organizer_email;
+
+    return res.status(200).json({
+      ...event,
+      organizer,
+    });
   } catch (error) {
     console.error("Failed to fetch event by id:", error);
     return res.status(500).json({ message: "Failed to fetch events" });

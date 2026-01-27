@@ -27,10 +27,20 @@ router.get("/", async (req, res) => {
         e.zip_code,
         e.location,
         e.category,
+        e.main_image,
+        e.ticket_price,
+        e.capacity,
         e.created_at,
-        f.created_at as favorited_at
+        f.created_at as favorited_at,
+        COALESCE(rsvp_counts.rsvp_count, 0) as rsvp_count
       FROM favorites f
       INNER JOIN events e ON f.event_id = e.id
+      LEFT JOIN (
+        SELECT event_id, COUNT(*) as rsvp_count
+        FROM rsvps
+        WHERE status = 'going'
+        GROUP BY event_id
+      ) rsvp_counts ON e.id = rsvp_counts.event_id
       WHERE f.user_id = ?
         AND e.status = 'approved'
         AND e.is_public = 1

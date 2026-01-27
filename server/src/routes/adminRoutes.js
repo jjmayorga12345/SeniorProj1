@@ -4,7 +4,38 @@ const { authenticateToken, authorize } = require("../middleware/auth");
 
 const router = express.Router();
 
-// All admin routes require authentication and admin role
+// GET /api/admin/settings/hero - Public endpoint (no auth required for reading)
+router.get("/settings/hero", async (req, res) => {
+  try {
+    // Check if settings table exists, if not return defaults
+    const [settings] = await pool.execute(`
+      SELECT setting_key, setting_value 
+      FROM site_settings 
+      WHERE setting_key IN ('hero_background_type', 'hero_background_color', 'hero_background_image')
+    `).catch(() => [[{ setting_key: null, setting_value: null }]]);
+
+    const settingsMap = {};
+    settings.forEach(s => {
+      settingsMap[s.setting_key] = s.setting_value;
+    });
+
+    return res.status(200).json({
+      type: settingsMap.hero_background_type || "color",
+      color: settingsMap.hero_background_color || "#2e6b4e",
+      image: settingsMap.hero_background_image || null,
+    });
+  } catch (error) {
+    console.error("Failed to fetch hero settings:", error);
+    // Return defaults if table doesn't exist
+    return res.status(200).json({
+      type: "color",
+      color: "#2e6b4e",
+      image: null,
+    });
+  }
+});
+
+// All other admin routes require authentication and admin role
 router.use(authenticateToken);
 router.use(authorize(["admin"]));
 
@@ -75,7 +106,7 @@ router.get("/events", async (req, res) => {
         e.category,
         e.status,
         e.created_at,
-        COALESCE(CONCAT(u.firstName, ' ', u.lastName), 'Unknown') as organizer_name,
+        COALESCE(CONCAT(u.first_name, ' ', u.last_name), 'Unknown') as organizer_name,
         COALESCE(rsvp_counts.rsvp_count, 0) as rsvp_count
       FROM events e
       LEFT JOIN users u ON e.created_by = u.id
@@ -186,6 +217,362 @@ router.delete("/events/:id", async (req, res) => {
   } catch (error) {
     console.error("Failed to delete event:", error);
     return res.status(500).json({ message: "Failed to delete event" });
+  }
+});
+
+// GET /api/admin/users - Get all users
+router.get("/users", async (req, res) => {
+  try {
+    const sql = `
+      SELECT 
+        id,
+        first_name,
+        last_name,
+        email,
+        role,
+        created_at
+      FROM users
+      ORDER BY created_at DESC
+    `;
+
+    const [rows] = await pool.execute(sql);
+    return res.status(200).json(rows || []);
+  } catch (error) {
+    console.error("Failed to fetch users:", error);
+    return res.status(500).json({ 
+      message: "Failed to fetch users",
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined
+    });
+  }
+});
+
+// GET /api/admin/users/:id - Get user details with events
+router.get("/users/:id", async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+
+    if (!userId || isNaN(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    // Get user info
+    const [userRows] = await pool.execute(
+      "SELECT id, first_name, last_name, email, role, created_at FROM users WHERE id = ?",
+      [userId]
+    );
+
+    if (!userRows || userRows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const user = userRows[0];
+
+    // Get events created by user (active listings - approved events)
+    const [createdEvents] = await pool.execute(`
+      SELECT 
+        e.id,
+        e.title,
+        e.category,
+        e.status,
+        e.starts_at,
+        e.created_at,
+        COALESCE(rsvp_counts.rsvp_count, 0) as rsvp_count
+      FROM events e
+      LEFT JOIN (
+        SELECT event_id, COUNT(*) as rsvp_count
+        FROM rsvps
+        WHERE status = 'going'
+        GROUP BY event_id
+      ) rsvp_counts ON e.id = rsvp_counts.event_id
+      WHERE e.created_by = ? AND e.status = 'approved'
+      ORDER BY e.created_at DESC
+    `, [userId]);
+
+    // Get pending events created by user
+    const [pendingEvents] = await pool.execute(`
+      SELECT 
+        e.id,
+        e.title,
+        e.category,
+        e.status,
+        e.starts_at,
+        e.created_at,
+        COALESCE(rsvp_counts.rsvp_count, 0) as rsvp_count
+      FROM events e
+      LEFT JOIN (
+        SELECT event_id, COUNT(*) as rsvp_count
+        FROM rsvps
+        WHERE status = 'going'
+        GROUP BY event_id
+      ) rsvp_counts ON e.id = rsvp_counts.event_id
+      WHERE e.created_by = ? AND e.status = 'pending'
+      ORDER BY e.created_at DESC
+    `, [userId]);
+
+    // Get events user is attending
+    const [attendingEvents] = await pool.execute(`
+      SELECT 
+        e.id,
+        e.title,
+        e.category,
+        e.status,
+        e.starts_at,
+        r.created_at as rsvp_date
+      FROM rsvps r
+      INNER JOIN events e ON r.event_id = e.id
+      WHERE r.user_id = ? AND r.status = 'going'
+      ORDER BY r.created_at DESC
+    `, [userId]);
+
+    return res.status(200).json({
+      user: {
+        id: user.id,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        role: user.role,
+        createdAt: user.created_at,
+      },
+      createdEvents: createdEvents || [],
+      pendingEvents: pendingEvents || [],
+      attendingEvents: attendingEvents || [],
+    });
+  } catch (error) {
+    console.error("Failed to fetch user details:", error);
+    return res.status(500).json({ 
+      message: "Failed to fetch user details",
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined
+    });
+  }
+});
+
+// DELETE /api/admin/users/:id - Delete a user (only organizers/users, not admins)
+router.delete("/users/:id", async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+
+    if (!userId || isNaN(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    // Check if user exists and get their role
+    const [userRows] = await pool.execute(
+      "SELECT id, role FROM users WHERE id = ?",
+      [userId]
+    );
+
+    if (!userRows || userRows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const user = userRows[0];
+
+    // Prevent deletion of admin users
+    if (user.role === "admin") {
+      return res.status(403).json({ message: "Cannot delete admin users" });
+    }
+
+    // Delete user (cascade will handle related records like events, rsvps, favorites)
+    await pool.execute("DELETE FROM users WHERE id = ?", [userId]);
+
+    return res.status(200).json({ message: "User deleted successfully" });
+  } catch (error) {
+    console.error("Failed to delete user:", error);
+    return res.status(500).json({ 
+      message: "Failed to delete user",
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined
+    });
+  }
+});
+
+// DELETE /api/admin/users/:userId/unattend/:eventId - Unattend a user from an event
+router.delete("/users/:userId/unattend/:eventId", async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId, 10);
+    const eventId = parseInt(req.params.eventId, 10);
+
+    if (!userId || isNaN(userId) || !eventId || isNaN(eventId)) {
+      return res.status(400).json({ message: "Invalid user ID or event ID" });
+    }
+
+    // Delete RSVP
+    const [result] = await pool.execute(
+      "DELETE FROM rsvps WHERE user_id = ? AND event_id = ?",
+      [userId, eventId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "RSVP not found" });
+    }
+
+    return res.status(200).json({ message: "User unattended from event successfully" });
+  } catch (error) {
+    console.error("Failed to unattend user from event:", error);
+    return res.status(500).json({ 
+      message: "Failed to unattend user from event",
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined
+    });
+  }
+});
+
+// GET /api/admin/analytics - Get analytics data
+router.get("/analytics", async (req, res) => {
+  try {
+    // Get events created over time (last 12 months, grouped by month)
+    const [eventsOverTime] = await pool.execute(`
+      SELECT 
+        DATE_FORMAT(created_at, '%Y-%m') as month,
+        COUNT(*) as count
+      FROM events
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+      GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      ORDER BY month ASC
+    `);
+
+    // Get users registered over time (last 12 months, grouped by month)
+    const [usersOverTime] = await pool.execute(`
+      SELECT 
+        DATE_FORMAT(created_at, '%Y-%m') as month,
+        COUNT(*) as count
+      FROM users
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+      GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      ORDER BY month ASC
+    `);
+
+    // Get RSVPs over time (last 12 months, grouped by month)
+    const [rsvpsOverTime] = await pool.execute(`
+      SELECT 
+        DATE_FORMAT(created_at, '%Y-%m') as month,
+        COUNT(*) as count
+      FROM rsvps
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH) AND status = 'going'
+      GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      ORDER BY month ASC
+    `);
+
+    // Get events by category
+    const [eventsByCategory] = await pool.execute(`
+      SELECT 
+        category,
+        COUNT(*) as count
+      FROM events
+      WHERE status = 'approved'
+      GROUP BY category
+      ORDER BY count DESC
+    `);
+
+    // Get events by status
+    const [eventsByStatus] = await pool.execute(`
+      SELECT 
+        status,
+        COUNT(*) as count
+      FROM events
+      GROUP BY status
+      ORDER BY count DESC
+    `);
+
+    // Get total counts
+    const [totalCounts] = await pool.execute(`
+      SELECT 
+        (SELECT COUNT(*) FROM users) as totalUsers,
+        (SELECT COUNT(*) FROM events) as totalEvents,
+        (SELECT COUNT(*) FROM events WHERE status = 'approved') as approvedEvents,
+        (SELECT COUNT(*) FROM rsvps WHERE status = 'going') as totalRsvps
+    `);
+
+    return res.status(200).json({
+      eventsOverTime: eventsOverTime || [],
+      usersOverTime: usersOverTime || [],
+      rsvpsOverTime: rsvpsOverTime || [],
+      eventsByCategory: eventsByCategory || [],
+      eventsByStatus: eventsByStatus || [],
+      totals: totalCounts[0] || {
+        totalUsers: 0,
+        totalEvents: 0,
+        approvedEvents: 0,
+        totalRsvps: 0,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to fetch analytics:", error);
+    return res.status(500).json({ 
+      message: "Failed to fetch analytics",
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined
+    });
+  }
+});
+
+
+// PUT /api/admin/settings/hero - Update hero background settings
+router.put("/settings/hero", async (req, res) => {
+  try {
+    const { type, color, image } = req.body;
+
+    if (!type || (type !== "color" && type !== "image")) {
+      return res.status(400).json({ message: "Invalid background type. Must be 'color' or 'image'" });
+    }
+
+    if (type === "color" && !color) {
+      return res.status(400).json({ message: "Color is required when type is 'color'" });
+    }
+
+    if (type === "image" && !image) {
+      return res.status(400).json({ message: "Image is required when type is 'image'" });
+    }
+
+    // Ensure settings table exists
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS site_settings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        setting_key VARCHAR(100) UNIQUE NOT NULL,
+        setting_value TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `).catch(() => {});
+
+    // Update or insert settings
+    await pool.execute(`
+      INSERT INTO site_settings (setting_key, setting_value)
+      VALUES ('hero_background_type', ?)
+      ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+    `, [type]);
+
+    if (type === "color") {
+      await pool.execute(`
+        INSERT INTO site_settings (setting_key, setting_value)
+        VALUES ('hero_background_color', ?)
+        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+      `, [color]);
+      
+      // Clear image if switching to color
+      await pool.execute(`
+        INSERT INTO site_settings (setting_key, setting_value)
+        VALUES ('hero_background_image', ?)
+        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+      `, [null]);
+    } else {
+      await pool.execute(`
+        INSERT INTO site_settings (setting_key, setting_value)
+        VALUES ('hero_background_image', ?)
+        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+      `, [image]);
+    }
+
+    return res.status(200).json({ 
+      message: "Hero background updated successfully",
+      settings: {
+        type,
+        color: type === "color" ? color : null,
+        image: type === "image" ? image : null,
+      }
+    });
+  } catch (error) {
+    console.error("Failed to update hero settings:", error);
+    return res.status(500).json({ 
+      message: "Failed to update hero background",
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined
+    });
   }
 });
 

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { getFavorites, removeFavorite, clearAllFavorites, checkRSVPStatus } from "../api";
-import AppShell from "../components/layout/AppShell";
-import EventCard from "../components/events/EventCard";
+import { getFavorites, removeFavorite, clearAllFavorites, checkRSVPStatus } from "../../api";
+import AppShell from "../../components/layout/AppShell";
+import EventCard from "../../components/events/EventCard";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 

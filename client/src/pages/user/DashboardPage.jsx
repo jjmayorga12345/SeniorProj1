@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getUserRole } from "../utils/auth";
-import AppShell from "../components/layout/AppShell";
-import EventCard from "../components/events/EventCard";
-import { getEvents, getMyEvents } from "../api";
+import { getUserRole } from "../../utils/auth";
+import AppShell from "../../components/layout/AppShell";
+import EventCard from "../../components/events/EventCard";
+import { getEvents, getMyEvents } from "../../api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 

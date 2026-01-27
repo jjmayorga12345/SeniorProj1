@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link, useParams } from "react-router-dom";
-import AppShell from "../components/layout/AppShell";
-import { getUserRole } from "../utils/auth";
-import { createEvent, updateEvent, uploadEventImage, getEventById, deleteEvent } from "../api";
-import AddressAutocomplete from "../components/AddressAutocomplete";
+import AppShell from "../../components/layout/AppShell";
+import { getUserRole } from "../../utils/auth";
+import { createEvent, updateEvent, uploadEventImage, getEventById, deleteEvent } from "../../api";
+import AddressAutocomplete from "../../components/AddressAutocomplete";
 
 const CATEGORIES = [
   "Music",
