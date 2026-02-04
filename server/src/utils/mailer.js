@@ -38,11 +38,12 @@ function initTransporter() {
     return null;
   }
 
+  const secure = process.env.SMTP_SECURE === "true" || process.env.SMTP_SECURE === "1";
   try {
     transporter = nodemailer.createTransport({
       host: SMTP_HOST,
       port: SMTP_PORT,
-      secure: false, // Use STARTTLS for port 587
+      secure, // true for port 465 (e.g. Resend), false for 587 (e.g. SendGrid)
       auth: {
         user: SMTP_USER,
         pass: SMTP_PASS,
@@ -65,7 +66,11 @@ async function verifyTransport() {
   }
 
   if (!transporter) {
-    console.warn("⚠️  SMTP not configured. Email sending disabled. OTP codes will be logged to console in DEV mode.");
+    const msg = "SMTP not configured. Password reset emails will not be sent. Set SMTP_HOST, SMTP_USER, SMTP_PASS (and optionally SMTP_FROM) in Render to enable real email.";
+    console.warn("⚠️  " + msg);
+    if (process.env.NODE_ENV === "production") {
+      console.warn("📧 Production: " + msg);
+    }
     mailerMode = "DEV_FALLBACK";
     return false;
   }
@@ -77,7 +82,9 @@ async function verifyTransport() {
     return true;
   } catch (error) {
     console.error(`❌ SMTP verify failed: ${error.message}`);
-    console.warn("⚠️  Email sending disabled. OTP codes will be logged to console in DEV mode.");
+    const msg = "Email sending disabled. Set SMTP_HOST, SMTP_USER, SMTP_PASS in Render to enable password reset emails.";
+    console.warn("⚠️  " + msg);
+    if (process.env.NODE_ENV === "production") console.warn("📧 Production: " + msg);
     mailerMode = "DEV_FALLBACK";
     return false;
   }

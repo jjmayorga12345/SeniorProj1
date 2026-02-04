@@ -80,13 +80,20 @@ Copy the line it prints (long hex string). That’s your **JWT_SECRET** for Rend
 3. Build settings:
    - **Project name:** `eventure` (or anything).
    - **Production branch:** `main`
-   - **Root directory:** `client`
-   - **Build command:** `npm ci && npm run build`
+   - **Root directory:** `client` ← **Must be `client`.** If this is blank, the build fails with "Could not read package.json" because the frontend lives in the `client` folder.
+   - **Build command:** `npm install && npm run build`  
+     *(If you prefer: `npm ci && npm run build`. No space between `&&` and the next command.)*
    - **Build output directory:** `dist`
-4. **Environment variables** → **Add**:
+4. **Environment variables** → **Add** (under **Build** or **Production**):
    - **Variable name:** `VITE_API_URL`
    - **Value:** *(your Render URL from Step 5, e.g. `https://eventure-api.onrender.com`)* — no trailing slash.
-5. **Save** and **Deploy**. Wait for build. Copy your **Pages URL** (e.g. `https://eventure.pages.dev`).
+   - **Variable name:** `NODE_VERSION`  
+   - **Value:** `20`  
+     *(So Cloudflare uses Node 20; avoids old default Node causing build errors.)*
+5. **Deploy command:** Leave **blank**. Do not set `npx run build` or anything here — Cloudflare deploys the `dist` folder automatically. If you set a deploy command that looks for a `build` folder, you’ll get "Cannot find module .../client/build" (Vite outputs to `dist`, not `build`).
+6. **Save** and **Deploy**. Wait for build. Copy your **Pages URL** (e.g. `https://eventure.pages.dev`).
+
+**If the build still errors:** In Cloudflare, open the failed build and copy the **error message** (the red line). Common fixes: wrong **Root directory** (`client` not blank), **Build output directory** must be `dist`, and **Build command** must be exactly `npm install && npm run build`.
 
 ---
 
