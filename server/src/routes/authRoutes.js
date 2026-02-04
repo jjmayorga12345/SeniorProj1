@@ -517,10 +517,10 @@ router.put("/auth/profile", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "showContactInfo is required" });
     }
 
-    // Update show_contact_info
+    // Update show_contact_info (Postgres: boolean)
     await pool.execute(
       "UPDATE users SET show_contact_info = ? WHERE id = ?",
-      [showContactInfo ? 1 : 0, userId]
+      [!!showContactInfo, userId]
     );
 
     return res.status(200).json({ 

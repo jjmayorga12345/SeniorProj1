@@ -9,7 +9,7 @@ function setAuthCookie(res, token) {
   res.cookie('token', token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false, // for local dev
+    secure: process.env.NODE_ENV === 'production',
     maxAge: maxAge
   });
 }

@@ -1,6 +1,6 @@
 const express = require("express");
 const { authenticateToken } = require("../middleware/auth");
-const pool = require("../db").pool;
+const { pool } = require("../db");
 
 const router = express.Router();
 
@@ -30,13 +30,13 @@ router.post("/:eventId", async (req, res) => {
     const event = eventRows[0];
 
     // Check if event is viewable (approved and public, or created by user)
-    if (event.status !== "approved" || event.is_public !== 1) {
-      // Allow if user is the creator
+    const isPublic = event.is_public === 1 || event.is_public === true;
+    if (event.status !== "approved" || !isPublic) {
       const [creatorCheck] = await pool.execute(
         `SELECT created_by FROM events WHERE id = ? LIMIT 1`,
         [eventId]
       );
-      if (creatorCheck.length === 0 || creatorCheck[0].created_by !== userId) {
+      if (creatorCheck.length === 0 || String(creatorCheck[0].created_by) !== String(userId)) {
         return res.status(403).json({ message: "Event is not available for RSVP" });
       }
     }

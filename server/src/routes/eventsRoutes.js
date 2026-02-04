@@ -87,7 +87,7 @@ router.post("/", authenticateToken, authorize(["organizer", "admin"]), async (re
       }
     }
 
-    // Prepare SQL insert
+    // Prepare SQL insert (RETURNING id for Postgres)
     const sql = `
       INSERT INTO events (
         title, description, category, starts_at, ends_at,
@@ -95,6 +95,7 @@ router.post("/", authenticateToken, authorize(["organizer", "admin"]), async (re
         tags, ticket_price, capacity, main_image, image_2, image_3, image_4,
         is_public, created_by, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      RETURNING id
     `;
 
     // Ensure all string fields are properly truncated to match DB column sizes
@@ -123,12 +124,12 @@ router.post("/", authenticateToken, authorize(["organizer", "admin"]), async (re
       image_2 ? String(image_2).trim().substring(0, 500) : null,
       image_3 ? String(image_3).trim().substring(0, 500) : null,
       image_4 ? String(image_4).trim().substring(0, 500) : null,
-      is_public ? 1 : 0,
+      !!is_public,
       userId,
     ];
 
     const [result] = await pool.execute(sql, params);
-    const eventId = result.insertId;
+    const eventId = result.insertId ?? result?.[0]?.id;
 
     // Fetch the created event
     const [eventRows] = await pool.execute(
@@ -145,16 +146,15 @@ router.post("/", authenticateToken, authorize(["organizer", "admin"]), async (re
     
     // Provide more detailed error messages
     let errorMessage = "Failed to create event";
-    if (error.code === "ER_NO_SUCH_TABLE") {
+    const code = error.code;
+    if (code === "ER_NO_SUCH_TABLE" || code === "42P01") {
       errorMessage = "Database table not found. Please check database setup.";
-    } else if (error.code === "ER_BAD_FIELD_ERROR") {
-      errorMessage = `Database column error: ${error.sqlMessage || "Missing required column"}. Please run the database migration files: add_capacity_to_events.sql and add_tags_ticket_price_to_events.sql`;
-    } else if (error.code === "ER_DUP_ENTRY") {
+    } else if (code === "ER_BAD_FIELD_ERROR" || code === "42703") {
+      errorMessage = `Database column error: ${error.sqlMessage || error.message || "Missing required column"}. Run postgres_bootstrap.sql.`;
+    } else if (code === "ER_DUP_ENTRY" || code === "23505") {
       errorMessage = "Duplicate entry. This event may already exist.";
-    } else if (error.sqlMessage) {
-      errorMessage = `Database error: ${error.sqlMessage}`;
-    } else if (error.message) {
-      errorMessage = error.message;
+    } else if (error.sqlMessage || error.message) {
+      errorMessage = `Database error: ${error.sqlMessage || error.message}`;
     }
     
     return res.status(500).json({ message: errorMessage });
@@ -167,9 +167,9 @@ router.get("/", async (req, res) => {
   try {
     const { limit, zip, radius, category, orderBy, order } = req.query;
 
-    // Only show approved events
+    // Only show approved events (Postgres: is_public boolean)
     const whereClauses = ["e.status = ?", "e.is_public = ?"];
-    const params = ["approved", 1];
+    const params = ["approved", true];
 
     // Category filter
     if (category && String(category).trim() !== "" && String(category).trim() !== "All") {
@@ -199,14 +199,11 @@ router.get("/", async (req, res) => {
         // For radius search, require lat/lng to be NOT NULL
         whereClauses.push("e.lat IS NOT NULL", "e.lng IS NOT NULL");
 
-        // Add radius filter using ST_Distance_Sphere
+        // Postgres: Haversine formula (meters). No ST_Distance_Sphere in Postgres.
         whereClauses.push(
-          `ST_Distance_Sphere(
-            POINT(e.lng, e.lat),
-            POINT(?, ?)
-          ) <= ?`
+          `( 6371000 * acos( LEAST(1.0, cos(radians(e.lat)) * cos(radians(?)) * cos(radians(?) - radians(e.lng)) + sin(radians(e.lat)) * sin(radians(?)) ) ) ) <= ?`
         );
-        params.push(centerLng, centerLat, radiusMeters);
+        params.push(centerLat, centerLng, centerLat, radiusMeters);
       } else {
         // Zip not found in zip_locations, return empty results
         return res.status(200).json([]);
@@ -330,11 +327,15 @@ router.get("/my", authenticateToken, async (req, res) => {
         e.image_4,
         e.created_at,
         e.updated_at,
-        COUNT(DISTINCT r.id) as rsvp_count
+        COALESCE(rsvp_counts.rsvp_count, 0) as rsvp_count
       FROM events e
-      LEFT JOIN rsvps r ON e.id = r.event_id AND r.status = 'going'
+      LEFT JOIN (
+        SELECT event_id, COUNT(*) as rsvp_count
+        FROM rsvps
+        WHERE status = 'going'
+        GROUP BY event_id
+      ) rsvp_counts ON e.id = rsvp_counts.event_id
       WHERE e.created_by = ?
-      GROUP BY e.id
       ORDER BY e.starts_at ASC
     `;
 
@@ -374,14 +375,18 @@ router.get("/attending", authenticateToken, async (req, res) => {
         e.created_at,
         r.status as rsvp_status,
         r.created_at as rsvp_created_at,
-        COUNT(DISTINCT r2.id) as rsvp_count
+        COALESCE(rsvp_counts.rsvp_count, 0) as rsvp_count
       FROM rsvps r
       INNER JOIN events e ON r.event_id = e.id
-      LEFT JOIN rsvps r2 ON e.id = r2.event_id AND r2.status = 'going'
+      LEFT JOIN (
+        SELECT event_id, COUNT(*) as rsvp_count
+        FROM rsvps
+        WHERE status = 'going'
+        GROUP BY event_id
+      ) rsvp_counts ON e.id = rsvp_counts.event_id
       WHERE r.user_id = ?
         AND e.status = 'approved'
-        AND e.is_public = 1
-      GROUP BY e.id, r.status, r.created_at
+        AND e.is_public = true
       ORDER BY e.starts_at ASC
     `;
 
@@ -529,7 +534,7 @@ router.put("/:id", authenticateToken, async (req, res) => {
       image_2 ? String(image_2).trim().substring(0, 500) : null,
       image_3 ? String(image_3).trim().substring(0, 500) : null,
       image_4 ? String(image_4).trim().substring(0, 500) : null,
-      is_public ? 1 : 0,
+      !!is_public,
       eventId,
     ];
 
@@ -591,6 +596,27 @@ router.delete("/:id", authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/events/categories - Get all unique categories (must be above /:id)
+router.get("/categories", async (req, res) => {
+  try {
+    const sql = `
+      SELECT DISTINCT category 
+      FROM events 
+      WHERE category IS NOT NULL 
+        AND category != ''
+        AND status = 'approved'
+        AND is_public = true
+      ORDER BY category ASC
+    `;
+    const [rows] = await pool.execute(sql);
+    const categories = rows.map((row) => row.category).filter(Boolean);
+    return res.status(200).json(categories || []);
+  } catch (error) {
+    console.error("Failed to fetch categories:", error);
+    return res.status(500).json({ message: "Failed to fetch categories" });
+  }
+});
+
 // GET /api/events/:id - Fetch single event
 // Public: only approved, public events
 // Authenticated: can view own events regardless of status, or approved public events
@@ -649,24 +675,28 @@ router.get("/:id", async (req, res) => {
           e.created_at,
           e.lat,
           e.lng,
-          COUNT(DISTINCT r.id) as rsvp_count,
+          COALESCE(rsvp_counts.rsvp_count, 0) as rsvp_count,
           u.first_name as organizer_first_name,
           u.last_name as organizer_last_name,
           u.profile_picture as organizer_profile_picture,
           u.show_contact_info as organizer_show_contact_info,
-          CASE WHEN u.show_contact_info = 1 THEN u.email ELSE NULL END as organizer_email
+          CASE WHEN u.show_contact_info IS TRUE THEN u.email ELSE NULL END as organizer_email
         FROM events e
-        LEFT JOIN rsvps r ON e.id = r.event_id AND r.status = 'going'
+        LEFT JOIN (
+          SELECT event_id, COUNT(*) as rsvp_count
+          FROM rsvps
+          WHERE status = 'going'
+          GROUP BY event_id
+        ) rsvp_counts ON e.id = rsvp_counts.event_id
         LEFT JOIN users u ON e.created_by = u.id
         WHERE e.id = ?
           AND (
             (e.status = ? AND e.is_public = ?)
             OR e.created_by = ?
           )
-        GROUP BY e.id, u.first_name, u.last_name, u.profile_picture, u.show_contact_info, u.email
         LIMIT 1
       `;
-      params = [eventId, "approved", 1, userId];
+      params = [eventId, "approved", true, userId];
     } else {
       // Public user - only approved public events
       sql = `
@@ -697,22 +727,26 @@ router.get("/:id", async (req, res) => {
           e.created_at,
           e.lat,
           e.lng,
-          COUNT(DISTINCT r.id) as rsvp_count,
+          COALESCE(rsvp_counts.rsvp_count, 0) as rsvp_count,
           u.first_name as organizer_first_name,
           u.last_name as organizer_last_name,
           u.profile_picture as organizer_profile_picture,
           u.show_contact_info as organizer_show_contact_info,
-          CASE WHEN u.show_contact_info = 1 THEN u.email ELSE NULL END as organizer_email
+          CASE WHEN u.show_contact_info IS TRUE THEN u.email ELSE NULL END as organizer_email
         FROM events e
-        LEFT JOIN rsvps r ON e.id = r.event_id AND r.status = 'going'
+        LEFT JOIN (
+          SELECT event_id, COUNT(*) as rsvp_count
+          FROM rsvps
+          WHERE status = 'going'
+          GROUP BY event_id
+        ) rsvp_counts ON e.id = rsvp_counts.event_id
         LEFT JOIN users u ON e.created_by = u.id
         WHERE e.id = ?
           AND e.status = ?
           AND e.is_public = ?
-        GROUP BY e.id, u.first_name, u.last_name, u.profile_picture, u.show_contact_info, u.email
         LIMIT 1
       `;
-      params = [eventId, "approved", 1];
+      params = [eventId, "approved", true];
     }
 
     const [rows] = await pool.execute(sql, params);
@@ -745,29 +779,6 @@ router.get("/:id", async (req, res) => {
   } catch (error) {
     console.error("Failed to fetch event by id:", error);
     return res.status(500).json({ message: "Failed to fetch events" });
-  }
-});
-
-// GET /api/events/categories - Get all unique categories from events
-router.get("/categories", async (req, res) => {
-  try {
-    const sql = `
-      SELECT DISTINCT category 
-      FROM events 
-      WHERE category IS NOT NULL 
-        AND category != ''
-        AND status = 'approved'
-        AND is_public = 1
-      ORDER BY category ASC
-    `;
-
-    const [rows] = await pool.execute(sql);
-    const categories = rows.map((row) => row.category).filter(Boolean);
-    
-    return res.status(200).json(categories || []);
-  } catch (error) {
-    console.error("Failed to fetch categories:", error);
-    return res.status(500).json({ message: "Failed to fetch categories" });
   }
 });
 

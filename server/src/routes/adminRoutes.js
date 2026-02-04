@@ -418,36 +418,36 @@ router.delete("/users/:userId/unattend/:eventId", async (req, res) => {
 // GET /api/admin/analytics - Get analytics data
 router.get("/analytics", async (req, res) => {
   try {
-    // Get events created over time (last 12 months, grouped by month)
+    // Get events created over time (last 12 months, grouped by month) - Postgres
     const [eventsOverTime] = await pool.execute(`
       SELECT 
-        DATE_FORMAT(created_at, '%Y-%m') as month,
-        COUNT(*) as count
+        to_char(created_at, 'YYYY-MM') as month,
+        COUNT(*)::int as count
       FROM events
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
-      GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      WHERE created_at >= (NOW() - INTERVAL '12 months')
+      GROUP BY to_char(created_at, 'YYYY-MM')
       ORDER BY month ASC
     `);
 
     // Get users registered over time (last 12 months, grouped by month)
     const [usersOverTime] = await pool.execute(`
       SELECT 
-        DATE_FORMAT(created_at, '%Y-%m') as month,
-        COUNT(*) as count
+        to_char(created_at, 'YYYY-MM') as month,
+        COUNT(*)::int as count
       FROM users
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
-      GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      WHERE created_at >= (NOW() - INTERVAL '12 months')
+      GROUP BY to_char(created_at, 'YYYY-MM')
       ORDER BY month ASC
     `);
 
     // Get RSVPs over time (last 12 months, grouped by month)
     const [rsvpsOverTime] = await pool.execute(`
       SELECT 
-        DATE_FORMAT(created_at, '%Y-%m') as month,
-        COUNT(*) as count
+        to_char(created_at, 'YYYY-MM') as month,
+        COUNT(*)::int as count
       FROM rsvps
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH) AND status = 'going'
-      GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+      WHERE created_at >= (NOW() - INTERVAL '12 months') AND status = 'going'
+      GROUP BY to_char(created_at, 'YYYY-MM')
       ORDER BY month ASC
     `);
 
@@ -472,13 +472,13 @@ router.get("/analytics", async (req, res) => {
       ORDER BY count DESC
     `);
 
-    // Get total counts
+    // Get total counts (quoted aliases for Postgres camelCase)
     const [totalCounts] = await pool.execute(`
       SELECT 
-        (SELECT COUNT(*) FROM users) as totalUsers,
-        (SELECT COUNT(*) FROM events) as totalEvents,
-        (SELECT COUNT(*) FROM events WHERE status = 'approved') as approvedEvents,
-        (SELECT COUNT(*) FROM rsvps WHERE status = 'going') as totalRsvps
+        (SELECT COUNT(*) FROM users) as "totalUsers",
+        (SELECT COUNT(*) FROM events) as "totalEvents",
+        (SELECT COUNT(*) FROM events WHERE status = 'approved') as "approvedEvents",
+        (SELECT COUNT(*) FROM rsvps WHERE status = 'going') as "totalRsvps"
     `);
 
     return res.status(200).json({
@@ -521,41 +521,39 @@ router.put("/settings/hero", async (req, res) => {
       return res.status(400).json({ message: "Image is required when type is 'image'" });
     }
 
-    // Ensure settings table exists
+    // Ensure settings table exists (Postgres)
     await pool.execute(`
       CREATE TABLE IF NOT EXISTS site_settings (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id SERIAL PRIMARY KEY,
         setting_key VARCHAR(100) UNIQUE NOT NULL,
         setting_value TEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `).catch(() => {});
 
-    // Update or insert settings
+    // Update or insert settings (Postgres ON CONFLICT)
     await pool.execute(`
       INSERT INTO site_settings (setting_key, setting_value)
       VALUES ('hero_background_type', ?)
-      ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+      ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
     `, [type]);
 
     if (type === "color") {
       await pool.execute(`
         INSERT INTO site_settings (setting_key, setting_value)
         VALUES ('hero_background_color', ?)
-        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+        ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
       `, [color]);
-      
-      // Clear image if switching to color
       await pool.execute(`
         INSERT INTO site_settings (setting_key, setting_value)
         VALUES ('hero_background_image', ?)
-        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+        ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
       `, [null]);
     } else {
       await pool.execute(`
         INSERT INTO site_settings (setting_key, setting_value)
         VALUES ('hero_background_image', ?)
-        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+        ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
       `, [image]);
     }
 

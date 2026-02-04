@@ -43,7 +43,7 @@ router.get("/", async (req, res) => {
       ) rsvp_counts ON e.id = rsvp_counts.event_id
       WHERE f.user_id = ?
         AND e.status = 'approved'
-        AND e.is_public = 1
+        AND e.is_public = true
       ORDER BY f.created_at DESC
     `;
 
@@ -68,7 +68,7 @@ router.post("/:eventId", async (req, res) => {
     // Check if event exists and is approved/public
     const eventCheckSql = `
       SELECT id FROM events 
-      WHERE id = ? AND status = 'approved' AND is_public = 1
+      WHERE id = ? AND status = 'approved' AND is_public = true
     `;
     const [eventRows] = await pool.execute(eventCheckSql, [eventId]);
     
@@ -91,7 +91,7 @@ router.post("/:eventId", async (req, res) => {
     return res.status(201).json({ message: "Event added to favorites" });
   } catch (error) {
     console.error("Failed to add favorite:", error);
-    if (error.code === "ER_DUP_ENTRY") {
+    if (error.code === "ER_DUP_ENTRY" || error.code === "23505") {
       return res.status(200).json({ message: "Event already in favorites" });
     }
     return res.status(500).json({ message: "Failed to add favorite" });
