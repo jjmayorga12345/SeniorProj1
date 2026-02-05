@@ -2,6 +2,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const { pool } = require("../db");
 const { authenticateToken, authorize } = require("../middleware/auth");
+const { sendMail } = require("../utils/mailer");
 
 const router = express.Router();
 
@@ -136,10 +137,33 @@ router.post("/", authenticateToken, authorize(["organizer", "admin"]), async (re
       "SELECT * FROM events WHERE id = ?",
       [eventId]
     );
+    const createdEvent = eventRows && eventRows[0] ? eventRows[0] : null;
+
+    // Notify followers of this organizer (fire-and-forget)
+    (async () => {
+      try {
+        const [followers] = await pool.execute(
+          "SELECT u.email, u.first_name FROM follows f INNER JOIN users u ON f.follower_id = u.id WHERE f.following_id = ?",
+          [userId]
+        );
+        if (!followers || followers.length === 0) return;
+        const [organizerRows] = await pool.execute("SELECT first_name, last_name FROM users WHERE id = ?", [userId]);
+        const org = organizerRows && organizerRows[0] ? organizerRows[0] : {};
+        const organizerName = [org.first_name, org.last_name].filter(Boolean).join(" ") || "An organizer";
+        const eventTitle = createdEvent ? String(createdEvent.title || "New event").trim() : "New event";
+        const startDate = createdEvent && createdEvent.starts_at ? new Date(createdEvent.starts_at).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : "";
+        const text = `${organizerName} just posted a new event on Eventure: "${eventTitle}"${startDate ? ` on ${startDate}` : ""}. Log in to view and RSVP.`;
+        for (const f of followers) {
+          if (f.email) await sendMail({ to: f.email, subject: `New event from ${organizerName}: ${eventTitle}`, text });
+        }
+      } catch (e) {
+        console.error("Notify followers error:", e.message);
+      }
+    })();
 
     return res.status(201).json({
       message: "Event created successfully",
-      event: eventRows[0],
+      event: createdEvent,
     });
   } catch (error) {
     console.error("Failed to create event:", error.message);
@@ -614,6 +638,134 @@ router.get("/categories", async (req, res) => {
   } catch (error) {
     console.error("Failed to fetch categories:", error);
     return res.status(500).json({ message: "Failed to fetch categories" });
+  }
+});
+
+// GET /api/events/:id/reviews - Get reviews for an event (public)
+router.get("/:id/reviews", async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(eventId)) return res.status(400).json({ message: "Invalid event ID" });
+    const [rows] = await pool.execute(
+      `SELECT r.id, r.event_id, r.user_id, r.rating, r.comment, r.photo_url, r.created_at,
+              u.first_name, u.last_name, u.profile_picture
+       FROM event_reviews r
+       INNER JOIN users u ON r.user_id = u.id
+       WHERE r.event_id = ?
+       ORDER BY r.created_at DESC`,
+      [eventId]
+    );
+    const reviews = (rows || []).map((r) => ({
+      id: r.id,
+      eventId: r.event_id,
+      userId: r.user_id,
+      rating: r.rating,
+      comment: r.comment,
+      photoUrl: r.photo_url,
+      createdAt: r.created_at,
+      user: { firstName: r.first_name, lastName: r.last_name, profilePicture: r.profile_picture },
+    }));
+    const avg = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
+    return res.status(200).json({ reviews, averageRating: Math.round(avg * 10) / 10, totalCount: reviews.length });
+  } catch (err) {
+    console.error("Get reviews error:", err);
+    return res.status(500).json({ message: "Failed to load reviews" });
+  }
+});
+
+// POST /api/events/:id/reviews - Add or update review (auth, one per user per event)
+router.post("/:id/reviews", authenticateToken, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.id, 10);
+    const userId = req.user.id;
+    const { rating, comment, photoUrl } = req.body;
+    if (!Number.isFinite(eventId)) return res.status(400).json({ message: "Invalid event ID" });
+    const r = parseInt(rating, 10);
+    if (!Number.isFinite(r) || r < 1 || r > 5) return res.status(400).json({ message: "Rating must be 1–5" });
+    const [existing] = await pool.execute("SELECT id FROM event_reviews WHERE event_id = ? AND user_id = ?", [eventId, userId]);
+    const commentStr = comment != null ? String(comment).trim().substring(0, 2000) : null;
+    const photoStr = photoUrl != null ? String(photoUrl).trim().substring(0, 500) : null;
+    if (existing && existing.length > 0) {
+      await pool.execute(
+        "UPDATE event_reviews SET rating = ?, comment = ?, photo_url = ? WHERE event_id = ? AND user_id = ?",
+        [r, commentStr || null, photoStr || null, eventId, userId]
+      );
+    } else {
+      await pool.execute(
+        "INSERT INTO event_reviews (event_id, user_id, rating, comment, photo_url) VALUES (?, ?, ?, ?, ?)",
+        [eventId, userId, r, commentStr || null, photoStr || null]
+      );
+    }
+    return res.status(200).json({ message: "Review saved" });
+  } catch (err) {
+    console.error("Post review error:", err);
+    return res.status(500).json({ message: "Failed to save review" });
+  }
+});
+
+// GET /api/events/:id/discussion - Get discussion posts for an event (public)
+router.get("/:id/discussion", async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(eventId)) return res.status(400).json({ message: "Invalid event ID" });
+    const [rows] = await pool.execute(
+      `SELECT d.id, d.event_id, d.user_id, d.message, d.created_at,
+              u.first_name, u.last_name, u.profile_picture
+       FROM event_discussion d
+       INNER JOIN users u ON d.user_id = u.id
+       WHERE d.event_id = ?
+       ORDER BY d.created_at ASC`,
+      [eventId]
+    );
+    const posts = (rows || []).map((r) => ({
+      id: r.id,
+      eventId: r.event_id,
+      userId: r.user_id,
+      message: r.message,
+      createdAt: r.created_at,
+      user: { firstName: r.first_name, lastName: r.last_name, profilePicture: r.profile_picture },
+    }));
+    return res.status(200).json({ posts });
+  } catch (err) {
+    console.error("Get discussion error:", err);
+    return res.status(500).json({ message: "Failed to load discussion" });
+  }
+});
+
+// POST /api/events/:id/discussion - Add discussion post (auth)
+router.post("/:id/discussion", authenticateToken, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.id, 10);
+    const userId = req.user.id;
+    const { message } = req.body;
+    if (!Number.isFinite(eventId)) return res.status(400).json({ message: "Invalid event ID" });
+    const msg = message != null ? String(message).trim() : "";
+    if (!msg) return res.status(400).json({ message: "Message is required" });
+    if (msg.length > 2000) return res.status(400).json({ message: "Message too long" });
+    await pool.execute(
+      "INSERT INTO event_discussion (event_id, user_id, message) VALUES (?, ?, ?)",
+      [eventId, userId, msg]
+    );
+    const [newRows] = await pool.execute(
+      "SELECT id, created_at FROM event_discussion WHERE event_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1",
+      [eventId, userId]
+    );
+    const newRow = newRows && newRows[0] ? newRows[0] : { id: null, created_at: new Date() };
+    const [userRows] = await pool.execute("SELECT first_name, last_name, profile_picture FROM users WHERE id = ?", [userId]);
+    const u = userRows && userRows[0] ? userRows[0] : {};
+    return res.status(201).json({
+      post: {
+        id: newRow.id,
+        eventId,
+        userId,
+        message: msg,
+        createdAt: newRow.created_at,
+        user: { firstName: u.first_name, lastName: u.last_name, profilePicture: u.profile_picture },
+      },
+    });
+  } catch (err) {
+    console.error("Post discussion error:", err);
+    return res.status(500).json({ message: "Failed to post" });
   }
 });
 

@@ -600,6 +600,57 @@ export async function checkRSVPStatus(eventId) {
   }
 }
 
+// Event reviews
+export async function getEventReviews(eventId) {
+  const response = await fetch(`${baseUrl}/events/${eventId}/reviews`, { ...getFetchOptions(), method: "GET" });
+  return handleResponse(response);
+}
+
+export async function postEventReview(eventId, { rating, comment, photoUrl }) {
+  const response = await fetch(`${baseUrl}/events/${eventId}/reviews`, {
+    ...getFetchOptions(),
+    method: "POST",
+    body: JSON.stringify({ rating, comment, photoUrl }),
+  });
+  return handleResponse(response);
+}
+
+// Event discussion
+export async function getEventDiscussion(eventId) {
+  const response = await fetch(`${baseUrl}/events/${eventId}/discussion`, { ...getFetchOptions(), method: "GET" });
+  return handleResponse(response);
+}
+
+export async function postEventDiscussion(eventId, message) {
+  const response = await fetch(`${baseUrl}/events/${eventId}/discussion`, {
+    ...getFetchOptions(),
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+  return handleResponse(response);
+}
+
+// Follow organizers
+export async function followOrganizer(organizerId) {
+  const response = await fetch(`${baseUrl}/follows/${organizerId}`, { ...getFetchOptions(), method: "POST" });
+  return handleResponse(response);
+}
+
+export async function unfollowOrganizer(organizerId) {
+  const response = await fetch(`${baseUrl}/follows/${organizerId}`, { ...getFetchOptions(), method: "DELETE" });
+  return handleResponse(response);
+}
+
+export async function checkFollowStatus(organizerId) {
+  const response = await fetch(`${baseUrl}/follows/check/${organizerId}`, { ...getFetchOptions(), method: "GET" });
+  return handleResponse(response);
+}
+
+export async function getMyFollowing() {
+  const response = await fetch(`${baseUrl}/follows/me`, { ...getFetchOptions(), method: "GET" });
+  return handleResponse(response);
+}
+
 // Admin API functions
 export async function getAdminStats() {
   try {

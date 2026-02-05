@@ -1,6 +1,21 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { getEventById, checkFavorite, addFavorite, removeFavorite, rsvpToEvent, cancelRSVP, checkRSVPStatus } from "../../api";
+import {
+  getEventById,
+  checkFavorite,
+  addFavorite,
+  removeFavorite,
+  rsvpToEvent,
+  cancelRSVP,
+  checkRSVPStatus,
+  getEventReviews,
+  postEventReview,
+  getEventDiscussion,
+  postEventDiscussion,
+  followOrganizer,
+  unfollowOrganizer,
+  checkFollowStatus,
+} from "../../api";
 import EventMap from "../../components/EventMap";
 import { getUserRole } from "../../utils/auth";
 
@@ -60,6 +75,15 @@ function EventDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [activeTab, setActiveTab] = useState("details");
+  const [reviews, setReviews] = useState({ reviews: [], averageRating: 0, totalCount: 0 });
+  const [discussionPosts, setDiscussionPosts] = useState([]);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  const [reviewForm, setReviewForm] = useState({ rating: 5, comment: "" });
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [discussionMessage, setDiscussionMessage] = useState("");
+  const [discussionSubmitting, setDiscussionSubmitting] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -83,8 +107,31 @@ function EventDetailsPage() {
           const rsvpCheck = await checkRSVPStatus(id);
           setIsRsvped(rsvpCheck.isRsvped);
         } catch (err) {
-          // If not authenticated, default to false
           setIsRsvped(false);
+        }
+
+        // Load reviews and discussion (public)
+        try {
+          const rev = await getEventReviews(id);
+          setReviews({ reviews: rev.reviews || [], averageRating: rev.averageRating || 0, totalCount: rev.totalCount || 0 });
+        } catch {
+          setReviews({ reviews: [], averageRating: 0, totalCount: 0 });
+        }
+        try {
+          const disc = await getEventDiscussion(id);
+          setDiscussionPosts(disc.posts || []);
+        } catch {
+          setDiscussionPosts([]);
+        }
+
+        // Check follow status if event has organizer and user is logged in
+        if (data.created_by && localStorage.getItem("eventure_token")) {
+          try {
+            const followCheck = await checkFollowStatus(data.created_by);
+            setIsFollowing(followCheck.following === true);
+          } catch {
+            setIsFollowing(false);
+          }
         }
       } catch (err) {
         console.error("Failed to fetch event:", err);
@@ -148,6 +195,71 @@ function EventDetailsPage() {
       alert(err.message || "Failed to update RSVP. Please try again.");
     } finally {
       setRsvpLoading(false);
+    }
+  };
+
+  const handleFollowClick = async () => {
+    if (!event?.created_by) return;
+    const token = localStorage.getItem("eventure_token");
+    if (!token) {
+      navigate("/login", { state: { returnTo: `/events/${id}` } });
+      return;
+    }
+    try {
+      setFollowLoading(true);
+      if (isFollowing) {
+        await unfollowOrganizer(event.created_by);
+        setIsFollowing(false);
+      } else {
+        await followOrganizer(event.created_by);
+        setIsFollowing(true);
+      }
+    } catch (err) {
+      alert(err.message || "Failed to update follow");
+    } finally {
+      setFollowLoading(false);
+    }
+  };
+
+  const handleReviewSubmit = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem("eventure_token");
+    if (!token) {
+      navigate("/login", { state: { returnTo: `/events/${id}` } });
+      return;
+    }
+    try {
+      setReviewSubmitting(true);
+      await postEventReview(id, { rating: reviewForm.rating, comment: reviewForm.comment.trim() || null });
+      const rev = await getEventReviews(id);
+      setReviews({ reviews: rev.reviews || [], averageRating: rev.averageRating || 0, totalCount: rev.totalCount || 0 });
+      setReviewForm((prev) => ({ ...prev, comment: "" }));
+    } catch (err) {
+      alert(err.message || "Failed to save review");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
+  const handleDiscussionSubmit = async (e) => {
+    e.preventDefault();
+    const msg = discussionMessage.trim();
+    if (!msg) return;
+    const token = localStorage.getItem("eventure_token");
+    if (!token) {
+      navigate("/login", { state: { returnTo: `/events/${id}` } });
+      return;
+    }
+    try {
+      setDiscussionSubmitting(true);
+      await postEventDiscussion(id, msg);
+      setDiscussionMessage("");
+      const disc = await getEventDiscussion(id);
+      setDiscussionPosts(disc.posts || []);
+    } catch (err) {
+      alert(err.message || "Failed to post");
+    } finally {
+      setDiscussionSubmitting(false);
     }
   };
 
@@ -318,7 +430,36 @@ function EventDetailsPage() {
               </svg>
             </button>
           </div>
+          {reviews.totalCount > 0 && (
+            <div className="flex items-center gap-2 mt-2 text-[#45556c]">
+              <span className="flex text-amber-500" aria-label={`${reviews.averageRating} out of 5 stars`}>
+                {"★".repeat(Math.round(reviews.averageRating))}
+                {"☆".repeat(5 - Math.round(reviews.averageRating))}
+              </span>
+              <span className="text-sm">({reviews.averageRating.toFixed(1)}) · {reviews.totalCount} review{reviews.totalCount !== 1 ? "s" : ""}</span>
+            </div>
+          )}
+        </div>
 
+        {/* Tabs */}
+        <div className="flex gap-1 p-1 bg-gray-100 rounded-lg mb-6">
+          {["details", "discussion", "reviews"].map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium capitalize transition-colors ${
+                activeTab === tab ? "bg-white text-[#2e6b4e] shadow-sm" : "text-[#45556c] hover:text-[#0f172b]"
+              }`}
+            >
+              {tab === "details" ? "Details" : tab === "discussion" ? "Discussion" : "Reviews"}
+            </button>
+          ))}
+        </div>
+
+        {/* Details tab content */}
+        {activeTab === "details" && (
+          <>
           {/* Date/Time Row */}
           <div className="flex items-center gap-2 text-[#45556c] mb-3">
             <svg
@@ -449,6 +590,20 @@ function EventDetailsPage() {
                     {event.organizer.email}
                   </a>
                 )}
+                {event.created_by && (
+                  <button
+                    type="button"
+                    onClick={handleFollowClick}
+                    disabled={followLoading}
+                    className={`mt-3 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      isFollowing
+                        ? "bg-gray-200 text-[#45556c] hover:bg-gray-300"
+                        : "bg-[#2e6b4e] text-white hover:bg-[#255a43]"
+                    } ${followLoading ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    {followLoading ? "..." : isFollowing ? "Following" : "Follow"}
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -478,6 +633,122 @@ function EventDetailsPage() {
             lng={event.lng}
           />
         </div>
+          </>
+        )}
+
+        {/* Discussion tab */}
+        {activeTab === "discussion" && (
+          <div className="bg-white border border-[#e2e8f0] rounded-[14px] shadow-sm p-6 mb-6">
+            <h2 className="text-xl font-semibold text-[#0f172b] mb-4">Discussion</h2>
+            <p className="text-sm text-[#45556c] mb-4">Ask questions, coordinate carpools, or chat with other attendees.</p>
+            <div className="space-y-4 mb-6 max-h-96 overflow-y-auto">
+              {discussionPosts.length === 0 ? (
+                <p className="text-[#62748e] text-sm">No posts yet. Be the first to ask a question!</p>
+              ) : (
+                discussionPosts.map((post) => (
+                  <div key={post.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="shrink-0 w-10 h-10 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white font-semibold text-sm">
+                      {post.user?.firstName?.[0] || ""}{post.user?.lastName?.[0] || ""}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#0f172b]">
+                        {post.user?.firstName} {post.user?.lastName}
+                      </p>
+                      <p className="text-sm text-[#45556c] whitespace-pre-wrap mt-1">{post.message}</p>
+                      <p className="text-xs text-[#62748e] mt-1">
+                        {post.createdAt ? new Date(post.createdAt).toLocaleString() : ""}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <form onSubmit={handleDiscussionSubmit} className="flex gap-2">
+              <input
+                type="text"
+                value={discussionMessage}
+                onChange={(e) => setDiscussionMessage(e.target.value)}
+                placeholder="Ask a question or share something..."
+                className="flex-1 h-12 px-4 rounded-lg border border-[#cad5e2] text-base focus:outline-none focus:ring-2 focus:ring-[#2e6b4e]"
+                maxLength={2000}
+              />
+              <button
+                type="submit"
+                disabled={!discussionMessage.trim() || discussionSubmitting}
+                className="px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50"
+              >
+                {discussionSubmitting ? "Posting..." : "Post"}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Reviews tab */}
+        {activeTab === "reviews" && (
+          <div className="bg-white border border-[#e2e8f0] rounded-[14px] shadow-sm p-6 mb-6">
+            <h2 className="text-xl font-semibold text-[#0f172b] mb-4">Reviews</h2>
+            {reviews.totalCount > 0 && (
+              <div className="flex items-center gap-2 mb-4">
+                <span className="flex text-amber-500 text-xl">
+                  {"★".repeat(Math.round(reviews.averageRating))}
+                  {"☆".repeat(5 - Math.round(reviews.averageRating))}
+                </span>
+                <span className="text-[#45556c]">{reviews.averageRating.toFixed(1)} · {reviews.totalCount} review{reviews.totalCount !== 1 ? "s" : ""}</span>
+              </div>
+            )}
+            <div className="space-y-4 mb-6 max-h-80 overflow-y-auto">
+              {reviews.reviews.length === 0 ? (
+                <p className="text-[#62748e] text-sm">No reviews yet. Be the first to leave one!</p>
+              ) : (
+                reviews.reviews.map((r) => (
+                  <div key={r.id} className="flex gap-3 p-3 border-b border-[#e2e8f0] last:border-0">
+                    <div className="shrink-0 w-10 h-10 rounded-full bg-[#2e6b4e] flex items-center justify-center text-white font-semibold text-sm">
+                      {r.user?.firstName?.[0] || ""}{r.user?.lastName?.[0] || ""}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#0f172b]">{r.user?.firstName} {r.user?.lastName}</p>
+                      <p className="text-amber-500 text-sm">{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</p>
+                      {r.comment && <p className="text-sm text-[#45556c] mt-1">{r.comment}</p>}
+                      <p className="text-xs text-[#62748e] mt-1">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : ""}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <form onSubmit={handleReviewSubmit} className="border-t border-[#e2e8f0] pt-4">
+              <label className="block text-sm font-medium text-[#314158] mb-2">Your rating</label>
+              <div className="flex gap-1 mb-3">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setReviewForm((prev) => ({ ...prev, rating: star }))}
+                    className={`text-2xl focus:outline-none ${star <= reviewForm.rating ? "text-amber-500" : "text-gray-300"}`}
+                    aria-label={`${star} star${star > 1 ? "s" : ""}`}
+                  >
+                    {star <= reviewForm.rating ? "★" : "☆"}
+                  </button>
+                ))}
+              </div>
+              <label className="block text-sm font-medium text-[#314158] mb-2">Comment (optional)</label>
+              <textarea
+                value={reviewForm.comment}
+                onChange={(e) => setReviewForm((prev) => ({ ...prev, comment: e.target.value }))}
+                placeholder="Share your experience..."
+                rows={3}
+                className="w-full px-4 py-2 rounded-lg border border-[#cad5e2] text-base focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] mb-3"
+                maxLength={2000}
+              />
+              <button
+                type="submit"
+                disabled={reviewSubmitting}
+                className="px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50"
+              >
+                {reviewSubmitting ? "Saving..." : "Submit review"}
+              </button>
+            </form>
+          </div>
+        )}
       </div>
     </div>
   );

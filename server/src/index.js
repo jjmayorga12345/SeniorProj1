@@ -14,8 +14,9 @@ const favoritesRoutes = require("./routes/favoritesRoutes");
 const rsvpRoutes = require("./routes/rsvpRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const followRoutes = require("./routes/followRoutes");
 const devRoutes = require("./routes/devRoutes");
-const { verifyTransport } = require("./utils/mailer");
+const { verifyTransport, sendMail } = require("./utils/mailer");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -88,6 +89,7 @@ app.use("/api/favorites", favoritesRoutes);
 app.use("/api/rsvp", rsvpRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/follows", followRoutes);
 if (process.env.NODE_ENV !== "production") {
   app.use("/api", devRoutes);
 }
