@@ -211,25 +211,31 @@ router.get("/", async (req, res) => {
         return res.status(200).json([]);
       }
 
-      // Look up zip in zip_locations table
-      const zipQuery = "SELECT lat, lng FROM zip_locations WHERE zip_code = ? LIMIT 1";
-      const [zipRows] = await pool.execute(zipQuery, [zipCode]);
+      try {
+        // Look up zip in zip_locations table (may not exist if migration not run)
+        const zipQuery = "SELECT lat, lng FROM zip_locations WHERE zip_code = ? LIMIT 1";
+        const [zipRows] = await pool.execute(zipQuery, [zipCode]);
 
-      if (zipRows && zipRows.length > 0) {
-        const centerLat = zipRows[0].lat;
-        const centerLng = zipRows[0].lng;
-        const radiusMeters = radiusValue * 1609.34; // Convert miles to meters
+        if (zipRows && zipRows.length > 0) {
+          const centerLat = zipRows[0].lat;
+          const centerLng = zipRows[0].lng;
+          const radiusMeters = radiusValue * 1609.34; // Convert miles to meters
 
-        // For radius search, require lat/lng to be NOT NULL
-        whereClauses.push("e.lat IS NOT NULL", "e.lng IS NOT NULL");
+          // For radius search, require lat/lng to be NOT NULL
+          whereClauses.push("e.lat IS NOT NULL", "e.lng IS NOT NULL");
 
-        // Postgres: Haversine formula (meters). No ST_Distance_Sphere in Postgres.
-        whereClauses.push(
-          `( 6371000 * acos( LEAST(1.0, cos(radians(e.lat)) * cos(radians(?)) * cos(radians(?) - radians(e.lng)) + sin(radians(e.lat)) * sin(radians(?)) ) ) ) <= ?`
-        );
-        params.push(centerLat, centerLng, centerLat, radiusMeters);
-      } else {
-        // Zip not found in zip_locations, return empty results
+          // Postgres: Haversine formula (meters). No ST_Distance_Sphere in Postgres.
+          whereClauses.push(
+            `( 6371000 * acos( LEAST(1.0, cos(radians(e.lat)) * cos(radians(?)) * cos(radians(?) - radians(e.lng)) + sin(radians(e.lat)) * sin(radians(?)) ) ) ) <= ?`
+          );
+          params.push(centerLat, centerLng, centerLat, radiusMeters);
+        } else {
+          // Zip not found in zip_locations, return empty results
+          return res.status(200).json([]);
+        }
+      } catch (zipErr) {
+        // zip_locations table may not exist or other DB error - return empty results
+        console.warn("Zip/radius filter error (zip_locations may be missing):", zipErr.message);
         return res.status(200).json([]);
       }
     }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { getEvents, getCategories, checkFavorite, addFavorite, removeFavorite, checkRSVPStatus } from "../../api";
 import EventCard from "../../components/events/EventCard";
@@ -239,6 +239,26 @@ function BrowseEventsPage() {
     return () => clearTimeout(handle);
   }, [zipCode, radius, isValidZip, selectedCategory]);
 
+  // Client-side search filter (API returns category/zip-filtered; we filter by search text)
+  const filteredEvents = useMemo(() => {
+    if (!searchQuery.trim()) return events;
+    const q = searchQuery.toLowerCase().trim();
+    return events.filter((event) => {
+      const title = (event.title || "").toLowerCase();
+      const desc = (event.description || "").toLowerCase();
+      const addr = buildFullAddress(event).toLowerCase();
+      const cat = (event.category || "").toLowerCase();
+      const venue = (event.venue || "").toLowerCase();
+      return (
+        title.includes(q) ||
+        desc.includes(q) ||
+        addr.includes(q) ||
+        cat.includes(q) ||
+        venue.includes(q)
+      );
+    });
+  }, [events, searchQuery]);
+
   // Handle favorite click
   const handleFavoriteClick = async (eventId, willBeFavorited) => {
     // Check if user is authenticated
@@ -353,7 +373,7 @@ function BrowseEventsPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex items-center justify-between mb-6">
           <p className="text-sm text-[#45556c]">
-            {loading ? "Loading..." : `Showing ${events.length} events`}
+            {loading ? "Loading..." : `Showing ${filteredEvents.length} events`}
           </p>
 
           {/* View Toggle Buttons */}
@@ -430,7 +450,7 @@ function BrowseEventsPage() {
           </div>
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {events.map((event) => (
+            {filteredEvents.map((event) => (
               <div
                 key={event.id}
                 onClick={(e) => handleEventClick(e, event.id)}
@@ -477,7 +497,7 @@ function BrowseEventsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {events.map((event) => (
+            {filteredEvents.map((event) => (
               <div
                 key={event.id}
                 onClick={(e) => handleEventClick(e, event.id)}
