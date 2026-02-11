@@ -2,24 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link, useParams } from "react-router-dom";
 import AppShell from "../../components/layout/AppShell";
 import { getUserRole } from "../../utils/auth";
-import { createEvent, updateEvent, uploadEventImage, getEventById, deleteEvent } from "../../api";
+import { createEvent, updateEvent, uploadEventImage, getEventById, deleteEvent, getCategories } from "../../api";
 import AddressAutocomplete from "../../components/AddressAutocomplete";
-
-const CATEGORIES = [
-  "Music",
-  "Food",
-  "Tech",
-  "Sports",
-  "Arts",
-  "Business",
-  "Campus",
-  "Concerts",
-  "Networking",
-  "Workshop",
-  "Conference",
-  "Festival",
-  "Other",
-];
 
 function CreateEventPage() {
   const { id } = useParams(); // Get event ID if editing
@@ -43,7 +27,8 @@ function CreateEventPage() {
     image3: null,
     image4: null,
   });
-  const [mainImageIndex, setMainImageIndex] = useState(null); // 1, 2, 3, or 4
+  const [mainImageIndex, setMainImageIndex] = useState(null);
+  const [categories, setCategories] = useState([]);
   const [formData, setFormData] = useState({
     title: "",
     category: "",
@@ -60,6 +45,19 @@ function CreateEventPage() {
     ticket_price: "0",
     capacity: "",
   });
+
+  // Load categories
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const list = await getCategories();
+        setCategories(Array.isArray(list) ? list.filter(Boolean) : []);
+      } catch {
+        setCategories([]);
+      }
+    };
+    load();
+  }, []);
 
   // Load event data if in edit mode
   useEffect(() => {
@@ -595,7 +593,7 @@ function CreateEventPage() {
                   className={`${inputBase} cursor-pointer`}
                 >
                   <option value="">Select a category</option>
-                  {CATEGORIES.map((cat) => (
+                  {categories.map((cat) => (
                     <option key={cat} value={cat}>
                       {cat}
                     </option>

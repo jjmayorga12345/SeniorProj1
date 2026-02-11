@@ -556,7 +556,6 @@ function EventDetailsPage() {
               )}
             </button>
           </div>
-        </div>
 
         {/* About This Event Section */}
         <div className="bg-white border border-[#e2e8f0] rounded-[14px] shadow-sm p-6 mb-6">

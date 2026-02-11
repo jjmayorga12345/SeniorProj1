@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { getCurrentUser } from "../../utils/auth";
-import { getAdminStats, getAllEvents, approveEvent, declineEvent, adminDeleteEvent, getAllUsers, getUserDetails, deleteUser, unattendUserFromEvent, getAnalytics } from "../../api";
+import { getAdminStats, getAllEvents, approveEvent, declineEvent, adminDeleteEvent, getAllUsers, getUserDetails, deleteUser, unattendUserFromEvent, getAnalytics, getHeroSettings, updateHeroSettings, uploadHeroImage, getContentSettings, updateContentSettings, getAdminCategories, addAdminCategory, updateAdminCategory, deleteAdminCategory } from "../../api";
 
 function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -27,7 +27,23 @@ function AdminDashboardPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [analytics, setAnalytics] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [hero, setHero] = useState({ type: "color", color: "#2e6b4e", image: null });
+  const [content, setContent] = useState({
+    home_hero_headline: "",
+    home_hero_subheadline: "",
+    home_about_title: "",
+    home_about_body: "",
+    home_most_attended_title: "",
+  });
+  const [adminCategories, setAdminCategories] = useState([]);
+  const [customizeLoading, setCustomizeLoading] = useState(false);
+  const [customizeSaving, setCustomizeSaving] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
   const hasLoadedRef = useRef(false);
+
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
   // Memoize user to prevent unnecessary re-renders - only parse once
   const user = useMemo(() => getCurrentUser(), []);
@@ -273,6 +289,134 @@ function AdminDashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
+  const loadCustomizeData = useCallback(async () => {
+    try {
+      setCustomizeLoading(true);
+      const [heroData, contentData, categoriesData] = await Promise.all([
+        getHeroSettings(),
+        getContentSettings(),
+        getAdminCategories(),
+      ]);
+      setHero(heroData || { type: "color", color: "#2e6b4e", image: null });
+      setContent(contentData || {
+        home_hero_headline: "",
+        home_hero_subheadline: "",
+        home_about_title: "",
+        home_about_body: "",
+        home_most_attended_title: "",
+      });
+      setAdminCategories(Array.isArray(categoriesData) ? categoriesData : []);
+    } catch (err) {
+      console.error("Failed to load customize data:", err);
+      alert("Failed to load site settings");
+    } finally {
+      setCustomizeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "customize" && !customizeLoading) {
+      loadCustomizeData();
+    }
+  }, [activeTab, loadCustomizeData]);
+
+  const handleHeroTypeChange = (type) => {
+    setHero((prev) => ({ ...prev, type }));
+  };
+
+  const handleHeroColorChange = (e) => {
+    setHero((prev) => ({ ...prev, color: e.target.value }));
+  };
+
+  const handleHeroImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setCustomizeSaving(true);
+      const res = await uploadHeroImage(file);
+      const imagePath = res?.url || res?.image || res?.path;
+      if (!imagePath) throw new Error("No image URL returned");
+      setHero((prev) => ({ ...prev, type: "image", image: imagePath }));
+      await updateHeroSettings({ type: "image", color: hero.color || "#2e6b4e", image: imagePath });
+      alert("Hero image updated!");
+    } catch (err) {
+      alert(err.message || "Failed to upload hero image");
+    } finally {
+      setCustomizeSaving(false);
+    }
+  };
+
+  const handleSaveHero = async () => {
+    try {
+      setCustomizeSaving(true);
+      await updateHeroSettings({ type: hero.type, color: hero.color || "#2e6b4e", image: hero.image });
+      alert("Hero settings saved!");
+    } catch (err) {
+      alert(err.message || "Failed to save hero settings");
+    } finally {
+      setCustomizeSaving(false);
+    }
+  };
+
+  const handleSaveContent = async () => {
+    try {
+      setCustomizeSaving(true);
+      await updateContentSettings(content);
+      alert("Content saved!");
+    } catch (err) {
+      alert(err.message || "Failed to save content");
+    } finally {
+      setCustomizeSaving(false);
+    }
+  };
+
+  const handleAddCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    try {
+      setCustomizeSaving(true);
+      const added = await addAdminCategory(name);
+      setAdminCategories((prev) => [...prev, { id: added.id, name: added.name, sort_order: added.sort_order ?? 0 }]);
+      setNewCategoryName("");
+      alert("Category added!");
+    } catch (err) {
+      alert(err.message || "Failed to add category");
+    } finally {
+      setCustomizeSaving(false);
+    }
+  };
+
+  const handleUpdateCategory = async (id) => {
+    const name = editingCategoryName.trim();
+    if (!name) return;
+    try {
+      setCustomizeSaving(true);
+      await updateAdminCategory(id, name);
+      setAdminCategories((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
+      setEditingCategoryId(null);
+      setEditingCategoryName("");
+      alert("Category updated!");
+    } catch (err) {
+      alert(err.message || "Failed to update category");
+    } finally {
+      setCustomizeSaving(false);
+    }
+  };
+
+  const handleDeleteCategory = async (id) => {
+    if (!window.confirm("Delete this category? Events with this category will keep it in their data.")) return;
+    try {
+      setCustomizeSaving(true);
+      await deleteAdminCategory(id);
+      setAdminCategories((prev) => prev.filter((c) => c.id !== id));
+      alert("Category deleted!");
+    } catch (err) {
+      alert(err.message || "Failed to delete category");
+    } finally {
+      setCustomizeSaving(false);
+    }
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
     const date = new Date(dateString);
@@ -453,6 +597,30 @@ function AdminDashboardPage() {
                 <line x1="6" y1="20" x2="6" y2="14" />
               </svg>
               Analytics
+            </button>
+            <button
+              onClick={() => setActiveTab("customize")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+                activeTab === "customize"
+                  ? "bg-green-50 text-green-700 font-medium"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              Customize
             </button>
           </div>
         </nav>
@@ -1229,8 +1397,241 @@ function AdminDashboardPage() {
             </div>
           )}
 
+          {/* Customize Section */}
+          {activeTab === "customize" && (
+            <div className="space-y-6">
+              {customizeLoading ? (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
+                  <p className="text-gray-600">Loading settings...</p>
+                </div>
+              ) : (
+                <>
+                  {/* Hero Section */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Hero Section</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Background Type</label>
+                        <div className="flex gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="heroType"
+                              checked={hero.type === "color"}
+                              onChange={() => handleHeroTypeChange("color")}
+                              className="text-[#2e6b4e]"
+                            />
+                            <span>Solid Color</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="heroType"
+                              checked={hero.type === "image"}
+                              onChange={() => handleHeroTypeChange("image")}
+                              className="text-[#2e6b4e]"
+                            />
+                            <span>Image</span>
+                          </label>
+                        </div>
+                      </div>
+                      {hero.type === "color" && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="color"
+                              value={hero.color || "#2e6b4e"}
+                              onChange={handleHeroColorChange}
+                              className="w-12 h-12 rounded border border-gray-300 cursor-pointer"
+                            />
+                            <input
+                              type="text"
+                              value={hero.color || "#2e6b4e"}
+                              onChange={(e) => setHero((prev) => ({ ...prev, color: e.target.value }))}
+                              className="px-3 py-2 border border-gray-300 rounded-lg w-28 font-mono"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {hero.type === "image" && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Hero Image</label>
+                          {hero.image && (
+                            <div className="mb-3">
+                              <img
+                                src={hero.image.startsWith("http") ? hero.image : `${API_URL}${hero.image}`}
+                                alt="Hero preview"
+                                className="max-h-40 rounded-lg border border-gray-200 object-cover"
+                              />
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleHeroImageUpload}
+                            disabled={customizeSaving}
+                            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-[#2e6b4e] file:text-white hover:file:bg-[#255a43]"
+                          />
+                        </div>
+                      )}
+                      <button
+                        onClick={handleSaveHero}
+                        disabled={customizeSaving}
+                        className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50"
+                      >
+                        {customizeSaving ? "Saving..." : "Save Hero"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Content Section */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Editable Content</h2>
+                    <p className="text-sm text-gray-600 mb-4">Edit text blocks displayed on the home page.</p>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Hero Headline</label>
+                        <input
+                          type="text"
+                          value={content.home_hero_headline || ""}
+                          onChange={(e) => setContent((prev) => ({ ...prev, home_hero_headline: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                          placeholder="Find your next event"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Hero Subheadline</label>
+                        <input
+                          type="text"
+                          value={content.home_hero_subheadline || ""}
+                          onChange={(e) => setContent((prev) => ({ ...prev, home_hero_subheadline: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                          placeholder="Discover events near you"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">About Title</label>
+                        <input
+                          type="text"
+                          value={content.home_about_title || ""}
+                          onChange={(e) => setContent((prev) => ({ ...prev, home_about_title: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                          placeholder="About Eventure"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">About Body</label>
+                        <textarea
+                          value={content.home_about_body || ""}
+                          onChange={(e) => setContent((prev) => ({ ...prev, home_about_body: e.target.value }))}
+                          rows={4}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                          placeholder="Describe your platform..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Most Attended Title</label>
+                        <input
+                          type="text"
+                          value={content.home_most_attended_title || ""}
+                          onChange={(e) => setContent((prev) => ({ ...prev, home_most_attended_title: e.target.value }))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                          placeholder="Most Attended Event"
+                        />
+                      </div>
+                      <button
+                        onClick={handleSaveContent}
+                        disabled={customizeSaving}
+                        className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50"
+                      >
+                        {customizeSaving ? "Saving..." : "Save Content"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Categories Section */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Categories</h2>
+                    <p className="text-sm text-gray-600 mb-4">Manage event categories shown in filters and category pages.</p>
+                    <div className="flex gap-2 mb-4">
+                      <input
+                        type="text"
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        placeholder="New category name"
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent"
+                        onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                      />
+                      <button
+                        onClick={handleAddCategory}
+                        disabled={customizeSaving || !newCategoryName.trim()}
+                        className="px-4 py-2 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] disabled:opacity-50"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <ul className="space-y-2">
+                      {adminCategories.map((cat) => (
+                        <li key={cat.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                          {editingCategoryId === cat.id ? (
+                            <>
+                              <input
+                                type="text"
+                                value={editingCategoryName}
+                                onChange={(e) => setEditingCategoryName(e.target.value)}
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg mr-2"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleUpdateCategory(cat.id)}
+                                disabled={customizeSaving}
+                                className="px-3 py-1 bg-green-600 text-white rounded text-sm mr-1"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => { setEditingCategoryId(null); setEditingCategoryName(""); }}
+                                className="px-3 py-1 bg-gray-400 text-white rounded text-sm"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-medium text-gray-900">{cat.name}</span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => { setEditingCategoryId(cat.id); setEditingCategoryName(cat.name); }}
+                                  className="text-[#2e6b4e] hover:text-[#255a43] text-sm font-medium"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCategory(cat.id)}
+                                  disabled={customizeSaving}
+                                  className="text-red-600 hover:text-red-800 text-sm font-medium disabled:opacity-50"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    {adminCategories.length === 0 && (
+                      <p className="text-gray-500 text-sm py-4">No categories yet. Add one above.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Placeholder for other tabs */}
-          {activeTab !== "events" && activeTab !== "users" && activeTab !== "analytics" && (
+          {activeTab !== "events" && activeTab !== "users" && activeTab !== "analytics" && activeTab !== "customize" && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
               <p className="text-gray-600">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} section coming soon</p>
             </div>

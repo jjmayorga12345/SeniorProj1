@@ -620,21 +620,26 @@ router.delete("/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/events/categories - Get all unique categories (must be above /:id)
+// GET /api/events/categories - Get categories (from admin-managed table, fallback to distinct from events)
 router.get("/categories", async (req, res) => {
   try {
-    const sql = `
-      SELECT DISTINCT category 
-      FROM events 
-      WHERE category IS NOT NULL 
-        AND category != ''
-        AND status = 'approved'
-        AND is_public = true
+    let rows;
+    try {
+      const [r] = await pool.execute("SELECT name FROM categories ORDER BY sort_order ASC, name ASC");
+      rows = r;
+    } catch {
+      rows = [];
+    }
+    if (rows && rows.length > 0) {
+      return res.status(200).json(rows.map((row) => row.name));
+    }
+    const [fallback] = await pool.execute(`
+      SELECT DISTINCT category FROM events
+      WHERE category IS NOT NULL AND TRIM(category) != '' AND status = 'approved' AND is_public = true
       ORDER BY category ASC
-    `;
-    const [rows] = await pool.execute(sql);
-    const categories = rows.map((row) => row.category).filter(Boolean);
-    return res.status(200).json(categories || []);
+    `);
+    const categories = (fallback || []).map((row) => row.category).filter(Boolean);
+    return res.status(200).json(categories);
   } catch (error) {
     console.error("Failed to fetch categories:", error);
     return res.status(500).json({ message: "Failed to fetch categories" });

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import AppShell from "../../components/layout/AppShell";
 import EventCard from "../../components/events/EventCard";
-import { getEvents } from "../../api";
+import { getEvents, getCategories } from "../../api";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -45,14 +45,19 @@ function buildFullAddress(event) {
   return parts.join(", ");
 }
 
-const CATEGORIES = ["All", "Music", "Food", "Tech", "Sports", "Arts"];
-
 function EventsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [categories, setCategories] = useState(["All"]);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    getCategories()
+      .then((list) => setCategories(["All", ...(list || []).filter(Boolean)]))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -110,7 +115,7 @@ function EventsPage() {
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent cursor-pointer"
             >
-              {CATEGORIES.map((cat) => (
+              {categories.map((cat) => (
                 <option key={cat} value={cat}>
                   {cat}
                 </option>

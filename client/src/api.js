@@ -884,6 +884,50 @@ export async function uploadHeroImage(imageFile) {
   }
 }
 
+// Content settings (editable text blocks) - public read
+export async function getContentSettings() {
+  const response = await fetch(`${baseUrl}/admin/settings/content`, { method: "GET", credentials: "include" });
+  return handleResponse(response);
+}
+
+export async function updateContentSettings(payload) {
+  const response = await fetch(`${baseUrl}/admin/settings/content`, {
+    ...getFetchOptions(),
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  return handleResponse(response);
+}
+
+// Admin categories (list/add/edit/delete)
+export async function getAdminCategories() {
+  const response = await fetch(`${baseUrl}/admin/categories`, { ...getFetchOptions(), method: "GET" });
+  return handleResponse(response);
+}
+
+export async function addAdminCategory(name) {
+  const response = await fetch(`${baseUrl}/admin/categories`, {
+    ...getFetchOptions(),
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+  return handleResponse(response);
+}
+
+export async function updateAdminCategory(id, name) {
+  const response = await fetch(`${baseUrl}/admin/categories/${id}`, {
+    ...getFetchOptions(),
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+  return handleResponse(response);
+}
+
+export async function deleteAdminCategory(id) {
+  const response = await fetch(`${baseUrl}/admin/categories/${id}`, { ...getFetchOptions(), method: "DELETE" });
+  return handleResponse(response);
+}
+
 // Profile API functions
 export async function updateProfileSettings({ showContactInfo }) {
   try {

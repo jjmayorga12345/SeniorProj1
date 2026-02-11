@@ -1,25 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
-import { getEvents, checkFavorite, addFavorite, removeFavorite, checkRSVPStatus } from "../../api";
+import { getEvents, getCategories, checkFavorite, addFavorite, removeFavorite, checkRSVPStatus } from "../../api";
 import EventCard from "../../components/events/EventCard";
-
-// Preset categories (same as CreateEventPage)
-const CATEGORIES = [
-  "All",
-  "Music",
-  "Food",
-  "Tech",
-  "Sports",
-  "Arts",
-  "Business",
-  "Campus",
-  "Concerts",
-  "Networking",
-  "Workshop",
-  "Conference",
-  "Festival",
-  "Other",
-];
 
 const RADIUS_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50];
 
@@ -75,8 +57,13 @@ function BrowseEventsPage() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [favoritesMap, setFavoritesMap] = useState({}); // { eventId: true/false }
-  const [rsvpMap, setRsvpMap] = useState({}); // { eventId: true/false }
+  const [categories, setCategories] = useState(["All"]);
+  const [favoritesMap, setFavoritesMap] = useState({});
+  const [rsvpMap, setRsvpMap] = useState({});
+
+  useEffect(() => {
+    getCategories().then((list) => setCategories(["All", ...(list || [])])).catch(() => {});
+  }, []);
 
   // Check if user is authenticated
   const isAuthenticated = () => {
@@ -346,7 +333,7 @@ function BrowseEventsPage() {
                 onChange={(e) => setSelectedCategory(e.target.value)}
                 className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent cursor-pointer"
               >
-                {CATEGORIES.map((cat) => (
+                {categories.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat === "All" ? "All Categories" : cat}
                   </option>

@@ -1,7 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getHeroSettings, updateHeroSettings, uploadHeroImage, getEvents } from "../../api";
-import { getUserRole } from "../../utils/auth";
+import { getHeroSettings, getContentSettings, getEvents, getCategories } from "../../api";
 import EventCard from "../../components/events/EventCard";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -12,24 +11,8 @@ function getImageUrl(imagePath) {
   return `${API_URL}${imagePath}`;
 }
 
-// Preset categories (same as CreateEventPage)
-const CATEGORIES = [
-  "Music",
-  "Food",
-  "Tech",
-  "Sports",
-  "Arts",
-  "Business",
-  "Campus",
-  "Concerts",
-  "Networking",
-  "Workshop",
-  "Conference",
-  "Festival",
-  "Other",
-];
-
-// Category icons mapping
+// Fallback category icons (for any category name)
+const DEFAULT_CATEGORY_ICON = "📅";
 const CATEGORY_ICONS = {
   Music: "🎵",
   Food: "🍔",
@@ -86,26 +69,34 @@ function HomePage() {
   const [selectedFilter, setSelectedFilter] = useState("");
   const [mostAttendedEvent, setMostAttendedEvent] = useState(null);
   const [loadingEvent, setLoadingEvent] = useState(true);
+  const [hero, setHero] = useState({ type: "color", color: "#2e6b4e", image: null });
+  const [content, setContent] = useState({
+    home_hero_headline: "",
+    home_hero_subheadline: "",
+    home_about_title: "",
+    home_about_body: "",
+    home_most_attended_title: "",
+  });
+  const [categories, setCategories] = useState([]);
 
-
+  useEffect(() => {
+    getHeroSettings().then(setHero).catch(() => {});
+    getContentSettings().then(setContent).catch(() => {});
+    getCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
 
   // Fetch the most attended event
   useEffect(() => {
     const fetchMostAttendedEvent = async () => {
       try {
         setLoadingEvent(true);
-        // Fetch all approved public events with their RSVP counts
-        // The API already filters for approved and public events by default
         const events = await getEvents();
-        
         if (events && events.length > 0) {
-          // Find the event with the highest rsvp_count
           const mostAttended = events.reduce((max, event) => {
             const currentCount = event.rsvp_count || 0;
             const maxCount = max.rsvp_count || 0;
             return currentCount > maxCount ? event : max;
           }, events[0]);
-          
           setMostAttendedEvent(mostAttended);
         }
       } catch (err) {
@@ -114,7 +105,6 @@ function HomePage() {
         setLoadingEvent(false);
       }
     };
-
     fetchMostAttendedEvent();
   }, []);
 
@@ -125,25 +115,29 @@ function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Hero Section */}
-      <section 
+      {/* Hero Section - from admin settings + editable content */}
+      <section
         className="relative text-white overflow-hidden"
         style={{
-          backgroundImage: "url(/hero-background.png)",
-          backgroundSize: "cover",
-          backgroundPosition: "center center",
-          backgroundRepeat: "no-repeat",
           minHeight: "400px",
+          ...(hero.type === "image" && hero.image
+            ? {
+                backgroundImage: `url(${getImageUrl(hero.image)})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center center",
+                backgroundRepeat: "no-repeat",
+              }
+            : { backgroundColor: hero.color || "#2e6b4e" }),
         }}
       >
         <div className="absolute inset-0 bg-black/20"></div>
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32">
           <div className="text-center">
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-4">
-              Discover Amazing Events Near You
+              {content.home_hero_headline || "Discover Amazing Events Near You"}
             </h1>
             <p className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto">
-              Find and join exciting events happening in your area
+              {content.home_hero_subheadline || "Find and join exciting events happening in your area"}
             </p>
           </div>
         </div>
@@ -163,11 +157,16 @@ function HomePage() {
               />
             </div>
             <div className="w-full md:w-48">
-              <select className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent cursor-pointer">
-                <option>All Categories</option>
-                <option>Music</option>
-                <option>Food</option>
-                <option>Tech</option>
+              <select
+                className="w-full h-12 px-4 rounded-lg border border-[#cad5e2] text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#2e6b4e] focus:border-transparent cursor-pointer"
+                aria-label="Category filter"
+                value={selectedFilter}
+                onChange={(e) => setSelectedFilter(e.target.value)}
+              >
+                <option value="">All Categories</option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
               </select>
             </div>
             <button className="px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] transition-colors whitespace-nowrap">
@@ -197,28 +196,38 @@ function HomePage() {
       {/* Our Story Section with Most Attended Event */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Story Section */}
+          {/* Story Section - editable via admin */}
           <div className="bg-white rounded-2xl shadow-lg p-8 md:p-12">
-            <h2 className="text-3xl font-bold text-[#0f172b] mb-4">How Eventure Was Started</h2>
+            <h2 className="text-3xl font-bold text-[#0f172b] mb-4">
+              {content.home_about_title || "How Eventure Was Started"}
+            </h2>
             <div className="prose prose-lg max-w-none text-[#45556c]">
-              <p className="text-lg leading-relaxed mb-4">
-                Eventure began as a simple idea in a college dorm room. Three friends, frustrated by the difficulty of discovering local events and connecting with their community, decided to build something better.
-              </p>
-              <p className="text-lg leading-relaxed mb-4">
-                What started as a weekend project quickly grew into a passion. We realized that finding events shouldn't be complicated—whether you're looking for a music festival, a tech meetup, a food tasting, or a networking event, everything should be in one place, easy to browse, and simple to join.
-              </p>
-              <p className="text-lg leading-relaxed mb-4">
-                Today, Eventure has become a thriving platform where thousands of people discover amazing events every day. We've built a community that brings people together, helps organizers reach their audiences, and makes every day an opportunity to experience something new.
-              </p>
-              <p className="text-lg leading-relaxed">
-                Our mission is simple: <strong className="text-[#2e6b4e]">to make event discovery effortless and community connection meaningful.</strong> Join us on this journey, and let's discover amazing events together.
-              </p>
+              {content.home_about_body ? (
+                <div className="text-lg leading-relaxed whitespace-pre-line">{content.home_about_body}</div>
+              ) : (
+                <>
+                  <p className="text-lg leading-relaxed mb-4">
+                    Eventure began as a simple idea in a college dorm room. Three friends, frustrated by the difficulty of discovering local events and connecting with their community, decided to build something better.
+                  </p>
+                  <p className="text-lg leading-relaxed mb-4">
+                    What started as a weekend project quickly grew into a passion. We realized that finding events shouldn't be complicated—whether you're looking for a music festival, a tech meetup, a food tasting, or a networking event, everything should be in one place, easy to browse, and simple to join.
+                  </p>
+                  <p className="text-lg leading-relaxed mb-4">
+                    Today, Eventure has become a thriving platform where thousands of people discover amazing events every day. We've built a community that brings people together, helps organizers reach their audiences, and makes every day an opportunity to experience something new.
+                  </p>
+                  <p className="text-lg leading-relaxed">
+                    Our mission is simple: <strong className="text-[#2e6b4e]">to make event discovery effortless and community connection meaningful.</strong> Join us on this journey, and let's discover amazing events together.
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
           {/* Most Attended Event Card */}
           <div className="bg-white rounded-2xl shadow-lg p-8 md:p-12">
-            <h2 className="text-3xl font-bold text-[#0f172b] mb-6">Current Most Attended Event</h2>
+            <h2 className="text-3xl font-bold text-[#0f172b] mb-6">
+              {content.home_most_attended_title || "Current Most Attended Event"}
+            </h2>
             {loadingEvent ? (
               <div className="text-center py-12">
                 <p className="text-[#45556c]">Loading event...</p>
@@ -254,7 +263,7 @@ function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl font-bold text-[#0f172b] mb-6">Browse by Category</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {CATEGORIES.map((category) => (
+            {categories.map((category) => (
               <button
                 key={category}
                 onClick={() => handleCategoryClick(category)}

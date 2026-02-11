@@ -35,6 +35,48 @@ router.get("/settings/hero", async (req, res) => {
   }
 });
 
+// GET /api/admin/settings/content - Public (editable text blocks for home etc.)
+const CONTENT_KEYS = [
+  "content_home_hero_headline",
+  "content_home_hero_subheadline",
+  "content_home_about_title",
+  "content_home_about_body",
+  "content_home_most_attended_title",
+];
+router.get("/settings/content", async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN (?, ?, ?, ?, ?)",
+      CONTENT_KEYS
+    ).catch(() => [[]]);
+    const out = {
+      home_hero_headline: "",
+      home_hero_subheadline: "",
+      home_about_title: "",
+      home_about_body: "",
+      home_most_attended_title: "",
+    };
+    (rows || []).forEach((r) => {
+      const key = r.setting_key;
+      const val = r.setting_value || "";
+      if (key === "content_home_hero_headline") out.home_hero_headline = val;
+      else if (key === "content_home_hero_subheadline") out.home_hero_subheadline = val;
+      else if (key === "content_home_about_title") out.home_about_title = val;
+      else if (key === "content_home_about_body") out.home_about_body = val;
+      else if (key === "content_home_most_attended_title") out.home_most_attended_title = val;
+    });
+    return res.status(200).json(out);
+  } catch (e) {
+    return res.status(200).json({
+      home_hero_headline: "",
+      home_hero_subheadline: "",
+      home_about_title: "",
+      home_about_body: "",
+      home_most_attended_title: "",
+    });
+  }
+});
+
 // All other admin routes require authentication and admin role
 router.use(authenticateToken);
 router.use(authorize(["admin"]));
@@ -503,6 +545,86 @@ router.get("/analytics", async (req, res) => {
   }
 });
 
+
+// PUT /api/admin/settings/content - Update editable text blocks
+router.put("/settings/content", async (req, res) => {
+  try {
+    const { home_hero_headline, home_hero_subheadline, home_about_title, home_about_body, home_most_attended_title } = req.body;
+    const updates = [
+      ["content_home_hero_headline", home_hero_headline],
+      ["content_home_hero_subheadline", home_hero_subheadline],
+      ["content_home_about_title", home_about_title],
+      ["content_home_about_body", home_about_body],
+      ["content_home_most_attended_title", home_most_attended_title],
+    ];
+    for (const [key, value] of updates) {
+      const val = value != null ? String(value).substring(0, 10000) : "";
+      await pool.execute(
+        `INSERT INTO site_settings (setting_key, setting_value) VALUES (?, ?)
+         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+        [key, val]
+      );
+    }
+    return res.status(200).json({ message: "Content updated" });
+  } catch (e) {
+    console.error("Update content error:", e);
+    return res.status(500).json({ message: "Failed to update content" });
+  }
+});
+
+// GET /api/admin/categories - List categories (admin)
+router.get("/categories", async (req, res) => {
+  try {
+    const [rows] = await pool.execute("SELECT id, name, sort_order FROM categories ORDER BY sort_order ASC, name ASC").catch(() => [[]]);
+    return res.status(200).json(rows || []);
+  } catch (e) {
+    return res.status(500).json({ message: "Failed to fetch categories" });
+  }
+});
+
+// POST /api/admin/categories - Add category
+router.post("/categories", async (req, res) => {
+  try {
+    const name = req.body.name != null ? String(req.body.name).trim().substring(0, 100) : "";
+    if (!name) return res.status(400).json({ message: "Category name is required" });
+    await pool.execute("INSERT INTO categories (name, sort_order) VALUES (?, 0)", [name]);
+    const [rows] = await pool.execute("SELECT id, name, sort_order FROM categories WHERE name = ? ORDER BY id DESC LIMIT 1", [name]);
+    const row = rows && rows[0] ? rows[0] : null;
+    if (!row) return res.status(500).json({ message: "Failed to create category" });
+    return res.status(201).json({ id: row.id, name: row.name, sort_order: row.sort_order || 0 });
+  } catch (e) {
+    if (e.code === "23505") return res.status(400).json({ message: "Category already exists" });
+    return res.status(500).json({ message: "Failed to add category" });
+  }
+});
+
+// PUT /api/admin/categories/:id - Update category
+router.put("/categories/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid id" });
+    const name = req.body.name != null ? String(req.body.name).trim().substring(0, 100) : "";
+    if (!name) return res.status(400).json({ message: "Category name is required" });
+    const [r] = await pool.execute("UPDATE categories SET name = ? WHERE id = ?", [name, id]);
+    if (!r || r.affectedRows === 0) return res.status(404).json({ message: "Category not found" });
+    return res.status(200).json({ message: "Updated", id, name });
+  } catch (e) {
+    if (e.code === "23505") return res.status(400).json({ message: "Category already exists" });
+    return res.status(500).json({ message: "Failed to update category" });
+  }
+});
+
+// DELETE /api/admin/categories/:id - Delete category
+router.delete("/categories/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid id" });
+    await pool.execute("DELETE FROM categories WHERE id = ?", [id]);
+    return res.status(200).json({ message: "Deleted" });
+  } catch (e) {
+    return res.status(500).json({ message: "Failed to delete category" });
+  }
+});
 
 // PUT /api/admin/settings/hero - Update hero background settings
 router.put("/settings/hero", async (req, res) => {
