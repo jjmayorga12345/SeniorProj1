@@ -169,7 +169,17 @@ function HomePage() {
                 ))}
               </select>
             </div>
-            <button className="px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] transition-colors whitespace-nowrap">
+            <button
+              onClick={() => {
+                const params = new URLSearchParams();
+                if (searchQuery.trim()) params.set("search", searchQuery.trim());
+                const isCategory = categories.includes(selectedFilter);
+                if (selectedFilter && isCategory) params.set("category", selectedFilter);
+                else if (selectedFilter && ["Today", "This Week", "Free", "Nearby", "Popular"].includes(selectedFilter)) params.set("filter", selectedFilter);
+                navigate(`/browse${params.toString() ? `?${params.toString()}` : ""}`);
+              }}
+              className="px-6 py-3 bg-[#2e6b4e] text-white rounded-lg font-medium hover:bg-[#255a43] transition-colors whitespace-nowrap"
+            >
               Search
             </button>
           </div>

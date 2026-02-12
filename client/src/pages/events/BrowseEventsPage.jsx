@@ -53,6 +53,8 @@ function BrowseEventsPage() {
   const [zipCode, setZipCode] = useState("");
   const [radius, setRadius] = useState(10); // Default 10 miles
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") || "All");
+  const [quickFilter, setQuickFilter] = useState(searchParams.get("filter") || ""); // Today, This Week, Free, Popular
+  const [showFiltersPanel, setShowFiltersPanel] = useState(false);
   const [viewMode, setViewMode] = useState("grid"); // "grid" or "list"
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +62,16 @@ function BrowseEventsPage() {
   const [categories, setCategories] = useState(["All"]);
   const [favoritesMap, setFavoritesMap] = useState({});
   const [rsvpMap, setRsvpMap] = useState({});
+
+  // Sync search and category from URL on mount / when URL changes
+  useEffect(() => {
+    const search = searchParams.get("search") || "";
+    const cat = searchParams.get("category") || "All";
+    const filt = searchParams.get("filter") || "";
+    setSearchQuery(search);
+    setSelectedCategory(cat);
+    setQuickFilter(filt);
+  }, [searchParams]);
 
   useEffect(() => {
     getCategories().then((list) => setCategories(["All", ...(list || [])])).catch(() => {});
@@ -179,14 +191,14 @@ function BrowseEventsPage() {
     }
   };
 
-  // Update URL when category changes
+  // Update URL when filters change
   useEffect(() => {
-    if (selectedCategory && selectedCategory !== "All") {
-      setSearchParams({ category: selectedCategory });
-    } else {
-      setSearchParams({});
-    }
-  }, [selectedCategory, setSearchParams]);
+    const params = {};
+    if (searchQuery.trim()) params.search = searchQuery.trim();
+    if (selectedCategory && selectedCategory !== "All") params.category = selectedCategory;
+    if (quickFilter) params.filter = quickFilter;
+    setSearchParams(params, { replace: true });
+  }, [searchQuery, selectedCategory, quickFilter, setSearchParams]);
 
   // Fetch events when filters change (category, zip, radius)
   useEffect(() => {
@@ -239,25 +251,49 @@ function BrowseEventsPage() {
     return () => clearTimeout(handle);
   }, [zipCode, radius, isValidZip, selectedCategory]);
 
-  // Client-side search filter (API returns category/zip-filtered; we filter by search text)
+  // Client-side search + quick filter (Today, This Week, Free, Popular)
   const filteredEvents = useMemo(() => {
-    if (!searchQuery.trim()) return events;
-    const q = searchQuery.toLowerCase().trim();
-    return events.filter((event) => {
-      const title = (event.title || "").toLowerCase();
-      const desc = (event.description || "").toLowerCase();
-      const addr = buildFullAddress(event).toLowerCase();
-      const cat = (event.category || "").toLowerCase();
-      const venue = (event.venue || "").toLowerCase();
-      return (
-        title.includes(q) ||
-        desc.includes(q) ||
-        addr.includes(q) ||
-        cat.includes(q) ||
-        venue.includes(q)
-      );
-    });
-  }, [events, searchQuery]);
+    let list = events;
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((event) => {
+        const title = (event.title || "").toLowerCase();
+        const desc = (event.description || "").toLowerCase();
+        const addr = buildFullAddress(event).toLowerCase();
+        const cat = (event.category || "").toLowerCase();
+        const venue = (event.venue || "").toLowerCase();
+        return (
+          title.includes(q) ||
+          desc.includes(q) ||
+          addr.includes(q) ||
+          cat.includes(q) ||
+          venue.includes(q)
+        );
+      });
+    }
+
+    // Quick filters (Today, This Week, Free, Popular)
+    if (quickFilter === "Today") {
+      const today = new Date().toDateString();
+      list = list.filter((e) => e.starts_at && new Date(e.starts_at).toDateString() === today);
+    } else if (quickFilter === "This Week") {
+      const now = new Date();
+      const weekEnd = new Date(now);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      list = list.filter((e) => {
+        const d = e.starts_at ? new Date(e.starts_at) : null;
+        return d && d >= now && d <= weekEnd;
+      });
+    } else if (quickFilter === "Free") {
+      list = list.filter((e) => !e.ticket_price || Number(e.ticket_price) === 0);
+    } else if (quickFilter === "Popular") {
+      list = [...list].sort((a, b) => (b.rsvp_count || 0) - (a.rsvp_count || 0));
+    }
+
+    return list;
+  }, [events, searchQuery, quickFilter]);
 
   // Handle favorite click
   const handleFavoriteClick = async (eventId, willBeFavorited) => {
@@ -362,10 +398,77 @@ function BrowseEventsPage() {
             </div>
 
             {/* Filters Button */}
-            <button className="px-6 py-3 bg-white border border-[#cad5e2] text-[#314158] rounded-lg font-medium hover:bg-gray-50 transition-colors whitespace-nowrap">
-              Filters
+            <button
+              onClick={() => setShowFiltersPanel((prev) => !prev)}
+              className={`px-6 py-3 rounded-lg font-medium transition-colors whitespace-nowrap ${
+                showFiltersPanel
+                  ? "bg-[#2e6b4e] text-white border border-[#2e6b4e]"
+                  : "bg-white border border-[#cad5e2] text-[#314158] hover:bg-gray-50"
+              }`}
+            >
+              Filters {showFiltersPanel ? "▲" : "▼"}
             </button>
           </div>
+
+          {/* Expandable Filters Panel */}
+          {showFiltersPanel && (
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-[#e2e8f0]">
+              <p className="text-sm font-medium text-[#314158] mb-3">Filter by</p>
+              <div className="flex flex-wrap gap-4 mb-3">
+                <div>
+                  <label className="block text-xs text-[#62748e] mb-1">Category</label>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className="h-10 px-3 rounded-lg border border-[#cad5e2] text-sm bg-white focus:ring-2 focus:ring-[#2e6b4e]"
+                  >
+                    {categories.map((cat) => (
+                      <option key={cat} value={cat}>{cat === "All" ? "All Categories" : cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-[#62748e] mb-1">ZIP Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 02910"
+                    value={zipCode}
+                    onChange={handleZipChange}
+                    maxLength={5}
+                    className="h-10 px-3 w-28 rounded-lg border border-[#cad5e2] text-sm focus:ring-2 focus:ring-[#2e6b4e]"
+                  />
+                </div>
+                {isValidZip && (
+                  <div>
+                    <label className="block text-xs text-[#62748e] mb-1">Within</label>
+                    <select
+                      value={radius}
+                      onChange={(e) => setRadius(Number.parseInt(e.target.value, 10))}
+                      className="h-10 px-3 rounded-lg border border-[#cad5e2] text-sm bg-white focus:ring-2 focus:ring-[#2e6b4e]"
+                    >
+                      {RADIUS_OPTIONS.map((r) => (
+                        <option key={r} value={r}>{r} miles</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="text-xs text-[#62748e] mr-2">Quick filters:</span>
+                {["Today", "This Week", "Free", "Popular"].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setQuickFilter(quickFilter === f ? "" : f)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                      quickFilter === f ? "bg-[#2e6b4e] text-white" : "bg-white border border-[#cad5e2] text-[#314158] hover:bg-gray-50"
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -444,9 +547,15 @@ function BrowseEventsPage() {
           <div className="text-center py-12">
             <p className="text-red-600">{error}</p>
           </div>
-        ) : events.length === 0 ? (
+        ) : filteredEvents.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-[#45556c]">No events available yet</p>
+            <p className="text-[#45556c]">
+              {searchQuery.trim()
+                ? `No events match "${searchQuery}"`
+                : quickFilter
+                ? `No ${quickFilter.toLowerCase()} events found`
+                : "No events available yet"}
+            </p>
           </div>
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
