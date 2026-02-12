@@ -17,15 +17,11 @@ router.post("/:organizerId", authenticateToken, async (req, res) => {
     }
 
     const [userRows] = await pool.execute(
-      "SELECT id, role FROM users WHERE id = ? LIMIT 1",
+      "SELECT id FROM users WHERE id = ? LIMIT 1",
       [organizerId]
     );
     if (!userRows || userRows.length === 0) {
       return res.status(404).json({ message: "User not found" });
-    }
-    const role = userRows[0].role;
-    if (role !== "organizer" && role !== "admin") {
-      return res.status(400).json({ message: "You can only follow organizers" });
     }
 
     await pool.execute(

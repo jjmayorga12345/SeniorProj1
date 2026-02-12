@@ -46,6 +46,8 @@ const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow Cloudflare Pages preview URLs (*.pages.dev)
+    if (origin.endsWith(".pages.dev")) return callback(null, true);
     callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
